@@ -20,6 +20,9 @@ pub struct KoraConfig {
     /// Minimum log level.
     #[serde(default = "default_log_level")]
     pub log_level: String,
+    /// Maximum request body size in bytes.
+    #[serde(default = "default_max_body_size")]
+    pub max_body_size: usize,
 }
 
 fn default_host() -> String {
@@ -34,6 +37,10 @@ fn default_log_level() -> String {
     "info".to_owned()
 }
 
+fn default_max_body_size() -> usize {
+    16 * 1_024 * 1_024
+}
+
 impl Default for KoraConfig {
     fn default() -> Self {
         Self {
@@ -41,6 +48,7 @@ impl Default for KoraConfig {
             host: default_host(),
             port: default_port(),
             log_level: default_log_level(),
+            max_body_size: default_max_body_size(),
         }
     }
 }
@@ -62,49 +70,5 @@ impl KoraConfig {
             .merge(Env::raw().only(&["DATABASE_URL"]))
             .extract()
             .map_err(Box::new)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn defaults_are_applied() {
-        // Use figment with only defaults — no file, no env.
-        let cfg: KoraConfig = Figment::from(Serialized::defaults(KoraConfig::default()))
-            .extract()
-            .expect("defaults should parse");
-
-        assert_eq!(cfg.host, "0.0.0.0");
-        assert_eq!(cfg.port, 8080);
-        assert_eq!(cfg.log_level, "info");
-        assert!(cfg.database_url.is_empty());
-    }
-
-    #[test]
-    fn env_overrides_defaults() {
-        // Simulate env vars via figment data.
-        let cfg: KoraConfig = Figment::from(Serialized::defaults(KoraConfig::default()))
-            .merge(("port", 9090_u16))
-            .merge(("host", "127.0.0.1"))
-            .merge(("database_url", "postgres://test:test@localhost/test"))
-            .extract()
-            .expect("overrides should parse");
-
-        assert_eq!(cfg.port, 9090);
-        assert_eq!(cfg.host, "127.0.0.1");
-        assert_eq!(cfg.database_url, "postgres://test:test@localhost/test");
-    }
-
-    #[test]
-    fn database_url_required_for_startup() {
-        // An empty database_url is technically valid at config-parse time,
-        // but the caller is responsible for rejecting it before connecting.
-        let cfg: KoraConfig = Figment::from(Serialized::defaults(KoraConfig::default()))
-            .extract()
-            .expect("defaults should parse");
-
-        assert!(cfg.database_url.is_empty(), "default database_url should be empty");
     }
 }

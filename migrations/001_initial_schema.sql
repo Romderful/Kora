@@ -1,7 +1,7 @@
 -- Initial Kora schema
 -- Tables: subjects, schemas, schema_references, config
 
-CREATE TABLE subjects (
+CREATE TABLE IF NOT EXISTS subjects (
     id         BIGSERIAL PRIMARY KEY,
     name       TEXT UNIQUE NOT NULL,
     deleted    BOOLEAN NOT NULL DEFAULT false,
@@ -9,7 +9,7 @@ CREATE TABLE subjects (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE schemas (
+CREATE TABLE IF NOT EXISTS schemas (
     id             BIGSERIAL PRIMARY KEY,
     subject_id     BIGINT NOT NULL REFERENCES subjects(id),
     version        INT NOT NULL CHECK (version > 0),
@@ -22,7 +22,7 @@ CREATE TABLE schemas (
     UNIQUE (subject_id, version)
 );
 
-CREATE TABLE schema_references (
+CREATE TABLE IF NOT EXISTS schema_references (
     id        BIGSERIAL PRIMARY KEY,
     schema_id BIGINT NOT NULL REFERENCES schemas(id),
     name      TEXT NOT NULL,
@@ -30,7 +30,7 @@ CREATE TABLE schema_references (
     version   INT NOT NULL
 );
 
-CREATE TABLE config (
+CREATE TABLE IF NOT EXISTS config (
     id                  BIGSERIAL PRIMARY KEY,
     subject             TEXT UNIQUE,
     compatibility_level TEXT NOT NULL DEFAULT 'BACKWARD',
@@ -39,10 +39,11 @@ CREATE TABLE config (
 );
 
 -- Indexes
-CREATE INDEX idx_schemas_subject_version ON schemas(subject_id, version);
-CREATE INDEX idx_subjects_name ON subjects(name);
-CREATE INDEX idx_schema_references_schema_id ON schema_references(schema_id);
+CREATE INDEX IF NOT EXISTS idx_schemas_subject_version ON schemas(subject_id, version);
+CREATE INDEX IF NOT EXISTS idx_subjects_name ON subjects(name);
+CREATE INDEX IF NOT EXISTS idx_schema_references_schema_id ON schema_references(schema_id);
 
 -- Global config row (subject = NULL means global)
 INSERT INTO config (subject, compatibility_level, mode)
-VALUES (NULL, 'BACKWARD', 'READWRITE');
+VALUES (NULL, 'BACKWARD', 'READWRITE')
+ON CONFLICT DO NOTHING;

@@ -5,4 +5,5 @@
 pub mod api;
 pub mod config;
 pub mod error;
+pub mod schema;
 pub mod storage;

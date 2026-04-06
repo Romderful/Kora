@@ -1,5 +1,8 @@
 //! `PostgreSQL` storage layer.
 
+pub mod schemas;
+pub mod subjects;
+
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 

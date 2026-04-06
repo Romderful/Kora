@@ -19,7 +19,8 @@ pub async fn pool() -> sqlx::PgPool {
 /// Spawn the Kora server on a random port and return the base URL.
 pub async fn spawn_server() -> String {
     let pool = pool().await;
-    let app = kora::api::router(pool);
+    let config = kora::config::KoraConfig::default();
+    let app = kora::api::router(pool, config.max_body_size);
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("should bind to random port");

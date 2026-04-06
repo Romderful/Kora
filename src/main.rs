@@ -18,7 +18,7 @@ async fn main() {
         .await
         .expect("failed to connect to database");
 
-    let app = api::router(pool);
+    let app = api::router(pool, cfg.max_body_size);
     let addr = format!("{}:{}", cfg.host, cfg.port);
     let listener = TcpListener::bind(&addr)
         .await
