@@ -3,6 +3,7 @@
 mod common;
 
 use reqwest::StatusCode;
+use sqlx::Row;
 
 const VALID_AVRO: &str = r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"}]}"#;
 
@@ -28,22 +29,21 @@ async fn register_valid_avro_schema() {
     assert!(id > 0);
 
     // Verify the row stored in DB.
-    let row = sqlx::query!(
+    let row = sqlx::query(
         "SELECT version, schema_type, schema_text, canonical_form, fingerprint FROM schemas WHERE id = $1",
-        id,
     )
+    .bind(id)
     .fetch_one(&pool)
     .await
     .unwrap();
 
-    assert_eq!(row.version, 1);
-    assert_eq!(row.schema_type, "AVRO");
-    assert_eq!(row.schema_text, VALID_AVRO);
+    assert_eq!(row.get::<i32, _>("version"), 1);
+    assert_eq!(row.get::<String, _>("schema_type"), "AVRO");
+    assert_eq!(row.get::<String, _>("schema_text"), VALID_AVRO);
 
-    // Canonical form and fingerprint must match what apache_avro computes.
     let expected = kora::schema::parse(kora::schema::SchemaFormat::Avro, VALID_AVRO).unwrap();
-    assert_eq!(row.canonical_form.as_deref(), Some(expected.canonical_form.as_str()));
-    assert_eq!(row.fingerprint.as_deref(), Some(expected.fingerprint.as_str()));
+    assert_eq!(row.get::<Option<String>, _>("canonical_form").as_deref(), Some(expected.canonical_form.as_str()));
+    assert_eq!(row.get::<Option<String>, _>("fingerprint").as_deref(), Some(expected.fingerprint.as_str()));
 }
 
 #[tokio::test]
@@ -73,11 +73,10 @@ async fn register_same_schema_is_idempotent() {
 
     assert_eq!(id1["id"], id2["id"], "same schema should return same id");
 
-    // Verify only one row exists — the real proof of idempotency.
-    let count: i64 = sqlx::query_scalar!(
-        "SELECT COUNT(*) as \"count!: i64\" FROM schemas s JOIN subjects sub ON s.subject_id = sub.id WHERE sub.name = $1",
-        subject,
+    let count: i64 = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM schemas s JOIN subjects sub ON s.subject_id = sub.id WHERE sub.name = $1",
     )
+    .bind(&subject)
     .fetch_one(&pool)
     .await
     .unwrap();
@@ -107,7 +106,6 @@ async fn register_without_schema_type_defaults_to_avro() {
     let base = common::spawn_server().await;
     let client = reqwest::Client::new();
 
-    // No schemaType field — should default to AVRO and succeed.
     let resp = client
         .post(format!("{base}/subjects/default-type-value/versions"))
         .json(&serde_json::json!({"schema": VALID_AVRO}))
@@ -127,16 +125,13 @@ async fn register_creates_subject_implicitly() {
     let client = reqwest::Client::new();
     let pool = common::pool().await;
 
-    // Use a unique name so the test is independent of prior runs.
     let subject = format!("implicit-{}", uuid::Uuid::new_v4());
 
-    let count: i64 = sqlx::query_scalar!(
-        "SELECT COUNT(*) as \"count!: i64\" FROM subjects WHERE name = $1",
-        subject,
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let count: i64 = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM subjects WHERE name = $1")
+        .bind(&subject)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(count, 0);
 
     let resp = client
@@ -148,13 +143,11 @@ async fn register_creates_subject_implicitly() {
 
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let count: i64 = sqlx::query_scalar!(
-        "SELECT COUNT(*) as \"count!: i64\" FROM subjects WHERE name = $1",
-        subject,
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let count: i64 = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM subjects WHERE name = $1")
+        .bind(&subject)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(count, 1);
 }
 
@@ -170,7 +163,6 @@ async fn register_with_empty_subject_returns_422() {
         .await
         .unwrap();
 
-    // Axum may 404 on empty path or 422 on NUL — either is rejection.
     assert_ne!(resp.status(), StatusCode::OK);
 }
 

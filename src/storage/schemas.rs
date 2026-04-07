@@ -26,34 +26,31 @@ pub async fn find_by_fingerprint(
     subject_id: i64,
     fingerprint: &str,
 ) -> Result<Option<i64>, sqlx::Error> {
-    sqlx::query_scalar!(
+    sqlx::query_scalar::<_, i64>(
         "SELECT id FROM schemas WHERE subject_id = $1 AND fingerprint = $2 AND deleted = false",
-        subject_id,
-        fingerprint,
     )
+    .bind(subject_id)
+    .bind(fingerprint)
     .fetch_optional(pool)
     .await
 }
 
 /// Insert a new schema with an atomically computed version and return its ID.
 ///
-/// The version is `MAX(version) + 1` for the subject, computed inside the
-/// `INSERT` itself so no gap exists between the read and the write.
-///
 /// # Errors
 ///
 /// Returns a database error on connection or constraint failure.
 pub async fn insert(pool: &PgPool, schema: &NewSchema<'_>) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar!(
+    sqlx::query_scalar::<_, i64>(
         r#"INSERT INTO schemas (subject_id, version, schema_type, schema_text, canonical_form, fingerprint)
            VALUES ($1, COALESCE((SELECT MAX(version) FROM schemas WHERE subject_id = $1), 0) + 1, $2, $3, $4, $5)
            RETURNING id"#,
-        schema.subject_id,
-        schema.schema_type,
-        schema.schema_text,
-        schema.canonical_form,
-        schema.fingerprint,
     )
+    .bind(schema.subject_id)
+    .bind(schema.schema_type)
+    .bind(schema.schema_text)
+    .bind(schema.canonical_form)
+    .bind(schema.fingerprint)
     .fetch_one(pool)
     .await
 }
@@ -64,7 +61,8 @@ pub async fn insert(pool: &PgPool, schema: &NewSchema<'_>) -> Result<i64, sqlx::
 ///
 /// Returns a database error on connection failure.
 pub async fn find_by_id(pool: &PgPool, id: i64) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar!("SELECT schema_text FROM schemas WHERE id = $1", id)
+    sqlx::query_scalar::<_, String>("SELECT schema_text FROM schemas WHERE id = $1")
+        .bind(id)
         .fetch_optional(pool)
         .await
 }

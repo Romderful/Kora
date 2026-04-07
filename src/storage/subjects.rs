@@ -8,18 +8,18 @@ use sqlx::PgPool;
 ///
 /// Returns a database error on connection failure.
 pub async fn upsert(pool: &PgPool, name: &str) -> Result<i64, sqlx::Error> {
-    let id = sqlx::query_scalar!(
+    let id = sqlx::query_scalar::<_, i64>(
         r#"WITH ins AS (
              INSERT INTO subjects (name) VALUES ($1)
              ON CONFLICT (name) DO NOTHING
              RETURNING id
            )
-           SELECT id AS "id!" FROM ins
+           SELECT id FROM ins
            UNION ALL
-           SELECT id AS "id!" FROM subjects WHERE name = $1
+           SELECT id FROM subjects WHERE name = $1
            LIMIT 1"#,
-        name,
     )
+    .bind(name)
     .fetch_one(pool)
     .await?;
 

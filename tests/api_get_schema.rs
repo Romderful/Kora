@@ -74,7 +74,8 @@ async fn get_soft_deleted_schema_by_id_still_returns_200() {
         .unwrap();
 
     // Soft-delete it directly in the DB.
-    sqlx::query!("UPDATE schemas SET deleted = true WHERE id = $1", id)
+    sqlx::query("UPDATE schemas SET deleted = true WHERE id = $1")
+        .bind(id)
         .execute(&pool)
         .await
         .unwrap();

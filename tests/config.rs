@@ -11,7 +11,6 @@ fn defaults_are_applied() {
 
     assert_eq!(cfg.host, "0.0.0.0");
     assert_eq!(cfg.port, 8080);
-    assert_eq!(cfg.log_level, "info");
     assert!(cfg.database_url.is_empty());
 }
 

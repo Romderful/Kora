@@ -49,30 +49,28 @@ The ID is permanent. Even if a schema is soft-deleted (hidden from subject listi
 
 Copy `.env.example` to `.env`. It contains the PostgreSQL credentials for Docker and the `DATABASE_URL` used by the application.
 
-The server binds to `0.0.0.0:8080` by default. These defaults and a few others (`log_level`, `max_body_size`) can be overridden via environment variables if needed — see `src/config.rs`.
+The server binds to `0.0.0.0:8080` by default. These defaults and a few others (`max_body_size`) can be overridden via environment variables if needed — see `src/config.rs`.
 
-## Running locally
+## Running
 
-Requires Rust (edition 2024) and Docker (for PostgreSQL).
+Requires [just](https://github.com/casey/just) and Docker.
 
 ```
-make dev
+just up                # build and run everything in Docker
 ```
 
-This starts PostgreSQL, applies migrations, and launches Kora on port 8080.
+This starts PostgreSQL, applies migrations, builds Kora, and launches it on port 8080.
 
 ## Development
 
 ```
-make test             # all tests (unit + integration)
-make test-unit        # unit tests only, no database needed
-make test-integration # integration tests, requires PostgreSQL
-make lint             # clippy pedantic
-make down             # stop containers
-make clean            # stop containers and remove volumes
+just test              # all tests
+just lint              # clippy pedantic
+just down              # stop containers
+just clean             # stop containers and remove volumes
 ```
 
-The codebase enforces `deny(clippy::pedantic)` and `deny(missing_docs)`. No `unwrap()` in production code. All SQL queries are verified at compile time via sqlx macros.
+The codebase enforces `deny(clippy::pedantic)` and `deny(missing_docs)`. All SQL queries are verified at compile time via sqlx macros.
 
 ## License
 

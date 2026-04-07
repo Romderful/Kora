@@ -17,9 +17,6 @@ pub struct KoraConfig {
     /// Port to listen on.
     #[serde(default = "default_port")]
     pub port: u16,
-    /// Minimum log level.
-    #[serde(default = "default_log_level")]
-    pub log_level: String,
     /// Maximum request body size in bytes.
     #[serde(default = "default_max_body_size")]
     pub max_body_size: usize,
@@ -33,10 +30,6 @@ fn default_port() -> u16 {
     8080
 }
 
-fn default_log_level() -> String {
-    "info".to_owned()
-}
-
 fn default_max_body_size() -> usize {
     16 * 1_024 * 1_024
 }
@@ -47,7 +40,6 @@ impl Default for KoraConfig {
             database_url: String::new(),
             host: default_host(),
             port: default_port(),
-            log_level: default_log_level(),
             max_body_size: default_max_body_size(),
         }
     }
@@ -58,14 +50,14 @@ impl KoraConfig {
     ///
     /// Layer order (last wins): defaults → env vars.
     /// Uses direct variable names: `DATABASE_URL`, `HOST`, `PORT`,
-    /// `LOG_LEVEL`, `MAX_BODY_SIZE`.
+    /// `MAX_BODY_SIZE`.
     ///
     /// # Errors
     ///
     /// Returns an error if required values are missing or cannot be parsed.
     pub fn load() -> Result<Self, Box<figment::Error>> {
         Figment::from(Serialized::defaults(Self::default()))
-            .merge(Env::raw().only(&["DATABASE_URL", "HOST", "PORT", "LOG_LEVEL", "MAX_BODY_SIZE"]))
+            .merge(Env::raw().only(&["DATABASE_URL", "HOST", "PORT", "MAX_BODY_SIZE"]))
             .extract()
             .map_err(Box::new)
     }

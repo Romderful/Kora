@@ -1,2 +1,4 @@
 /target
 .env
+.github/copilot-instructions.md
+.github/hooks/

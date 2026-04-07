@@ -1,6 +1,7 @@
 //! Confluent-compatible error types and response formatting.
 
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -62,13 +63,6 @@ impl IntoResponse for KoraError {
             error_code: self.error_code(),
             message: self.to_string(),
         };
-        let json = serde_json::to_string(&body).unwrap_or_else(|_| {
-            format!(
-                r#"{{"error_code":50001,"message":"{}"}}"#,
-                "Error in the backend data store"
-            )
-        });
-
-        (self.status_code(), json).into_response()
+        (self.status_code(), Json(body)).into_response()
     }
 }
