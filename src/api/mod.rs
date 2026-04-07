@@ -5,7 +5,7 @@ mod middleware;
 pub mod schemas;
 pub mod subjects;
 
-use axum::{Router, extract::DefaultBodyLimit, routing::{get, post}};
+use axum::{Router, extract::DefaultBodyLimit, routing::get};
 use sqlx::PgPool;
 
 /// Build the application router with all routes.
@@ -13,9 +13,10 @@ pub fn router(pool: PgPool, max_body_size: usize) -> Router {
     Router::new()
         .route("/health", get(health::health))
         .route("/schemas/ids/{id}", get(schemas::get_schema_by_id))
+        .route("/subjects", get(subjects::list_subjects))
         .route(
             "/subjects/{subject}/versions",
-            post(subjects::register_schema),
+            get(subjects::list_versions).post(subjects::register_schema),
         )
         .route(
             "/subjects/{subject}/versions/{version}",

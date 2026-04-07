@@ -26,6 +26,19 @@ pub async fn upsert(pool: &PgPool, name: &str) -> Result<i64, sqlx::Error> {
     Ok(id)
 }
 
+/// List all non-deleted subject names, sorted alphabetically.
+///
+/// # Errors
+///
+/// Returns a database error on connection failure.
+pub async fn list(pool: &PgPool) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT name FROM subjects WHERE deleted = false ORDER BY name",
+    )
+    .fetch_all(pool)
+    .await
+}
+
 /// Check if a subject exists by name.
 ///
 /// # Errors

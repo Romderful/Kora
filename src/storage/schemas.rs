@@ -124,6 +124,21 @@ pub async fn find_latest_by_subject(
     .map(|opt| opt.as_ref().map(row_to_schema_version))
 }
 
+/// List all non-deleted version numbers for a subject, sorted ascending.
+///
+/// # Errors
+///
+/// Returns a database error on connection failure.
+pub async fn list_versions(pool: &PgPool, subject: &str) -> Result<Vec<i32>, sqlx::Error> {
+    sqlx::query_scalar::<_, i32>(
+        r"SELECT s.version FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+           WHERE sub.name = $1 AND s.deleted = false ORDER BY s.version",
+    )
+    .bind(subject)
+    .fetch_all(pool)
+    .await
+}
+
 /// Find a schema by its global ID (ignores soft-delete — IDs are permanent).
 ///
 /// # Errors

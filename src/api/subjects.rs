@@ -68,6 +68,42 @@ pub async fn register_schema(
     Ok(Json(RegisterSchemaResponse { id }))
 }
 
+/// List all registered subjects.
+///
+/// `GET /subjects`
+///
+/// # Errors
+///
+/// Returns `KoraError::BackendDataStore` (500) for database failures.
+pub async fn list_subjects(
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, KoraError> {
+    let names = subjects::list(&pool).await?;
+    Ok(Json(names))
+}
+
+/// List all versions of a subject.
+///
+/// `GET /subjects/{subject}/versions`
+///
+/// # Errors
+///
+/// Returns `KoraError::SubjectNotFound` (40401) if the subject doesn't exist,
+/// or `KoraError::BackendDataStore` (500) for database failures.
+pub async fn list_versions(
+    State(pool): State<PgPool>,
+    Path(subject): Path<String>,
+) -> Result<impl IntoResponse, KoraError> {
+    validate_subject(&subject)?;
+
+    if !subjects::exists(&pool, &subject).await? {
+        return Err(KoraError::SubjectNotFound);
+    }
+
+    let versions = schemas::list_versions(&pool, &subject).await?;
+    Ok(Json(versions))
+}
+
 /// Retrieve a schema by subject and version.
 ///
 /// `GET /subjects/{subject}/versions/{version}`
