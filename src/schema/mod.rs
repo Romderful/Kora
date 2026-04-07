@@ -26,6 +26,9 @@ impl SchemaFormat {
         }
     }
 
+    /// Known schema types advertised by the registry (matches Confluent).
+    pub const KNOWN_TYPES: &[&str] = &["AVRO", "JSON", "PROTOBUF"];
+
     /// Wire-format name used in database and API responses.
     #[must_use]
     pub const fn as_str(self) -> &'static str {

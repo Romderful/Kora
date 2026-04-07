@@ -8,6 +8,7 @@ use axum::{
 use sqlx::PgPool;
 
 use crate::error::KoraError;
+use crate::schema::SchemaFormat;
 use crate::storage::schemas;
 
 /// Retrieve a schema by its global ID.
@@ -27,4 +28,11 @@ pub async fn get_schema_by_id(
         .ok_or(KoraError::SchemaNotFound)?;
 
     Ok(Json(serde_json::json!({ "schema": schema_text })))
+}
+
+/// List supported schema types.
+///
+/// `GET /schemas/types`
+pub async fn list_types() -> impl IntoResponse {
+    Json(SchemaFormat::KNOWN_TYPES)
 }
