@@ -1,12 +1,13 @@
 //! Shared test helpers for integration tests.
-
+// Each test file compiles this module independently, so unused helpers
+// produce false-positive warnings.
 #![allow(dead_code)]
 
 use tokio::net::TcpListener;
 
-/// Get `DATABASE_URL` from env. Panics if not set — use `make test` to run.
+/// Get `DATABASE_URL` from env. Panics if not set — use `just test` to run.
 pub fn database_url() -> String {
-    std::env::var("DATABASE_URL").expect("DATABASE_URL must be set — run via `make test`")
+    std::env::var("DATABASE_URL").expect("DATABASE_URL must be set — run via `just test`")
 }
 
 /// Create a PG pool with migrations applied.

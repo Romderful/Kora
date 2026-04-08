@@ -3,9 +3,10 @@
 use kora::{api, config::KoraConfig, storage};
 use tokio::net::TcpListener;
 
+// -- Entrypoint --
+
 #[tokio::main]
 async fn main() {
-    // Structured JSON logging.
     tracing_subscriber::fmt().json().init();
 
     let cfg = KoraConfig::load().expect("failed to load configuration");
@@ -31,6 +32,8 @@ async fn main() {
         .await
         .expect("server error");
 }
+
+// -- Helpers --
 
 async fn shutdown_signal() {
     tokio::signal::ctrl_c()

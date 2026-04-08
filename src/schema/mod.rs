@@ -4,6 +4,8 @@ pub mod avro;
 
 use crate::error::KoraError;
 
+// -- Types --
+
 /// Supported schema formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SchemaFormat {
@@ -11,7 +13,21 @@ pub enum SchemaFormat {
     Avro,
 }
 
+/// Parsed and validated schema with computed metadata.
+#[derive(Debug)]
+pub struct ParsedSchema {
+    /// The canonical form of the schema (for deduplication).
+    pub canonical_form: String,
+    /// Hex-encoded Rabin fingerprint of the canonical form.
+    pub fingerprint: String,
+}
+
+// -- Functions --
+
 impl SchemaFormat {
+    /// Known schema types advertised by the registry (matches Confluent).
+    pub const KNOWN_TYPES: &[&str] = &["AVRO", "JSON", "PROTOBUF"];
+
     /// Parse a format string, defaulting to Avro when `None`.
     ///
     /// # Errors
@@ -26,9 +42,6 @@ impl SchemaFormat {
         }
     }
 
-    /// Known schema types advertised by the registry (matches Confluent).
-    pub const KNOWN_TYPES: &[&str] = &["AVRO", "JSON", "PROTOBUF"];
-
     /// Wire-format name used in database and API responses.
     #[must_use]
     pub const fn as_str(self) -> &'static str {
@@ -36,15 +49,6 @@ impl SchemaFormat {
             Self::Avro => "AVRO",
         }
     }
-}
-
-/// Parsed and validated schema with computed metadata.
-#[derive(Debug)]
-pub struct ParsedSchema {
-    /// The canonical form of the schema (for deduplication).
-    pub canonical_form: String,
-    /// Hex-encoded Rabin fingerprint of the canonical form.
-    pub fingerprint: String,
 }
 
 /// Parse and validate a raw schema string.

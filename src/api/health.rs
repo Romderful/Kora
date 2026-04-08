@@ -9,11 +9,15 @@ use axum::{
 use serde::Serialize;
 use sqlx::PgPool;
 
+// -- Types --
+
 /// Health check response body.
 #[derive(Debug, Serialize)]
 struct HealthResponse {
     status: &'static str,
 }
+
+// -- Handlers --
 
 /// `GET /health` — returns 200 when PG is reachable, 503 otherwise.
 pub async fn health(State(pool): State<PgPool>) -> Response {

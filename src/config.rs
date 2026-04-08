@@ -6,6 +6,8 @@ use figment::{
 };
 use serde::{Deserialize, Serialize};
 
+// -- Types --
+
 /// Top-level configuration for the Kora server.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct KoraConfig {
@@ -22,17 +24,7 @@ pub struct KoraConfig {
     pub max_body_size: usize,
 }
 
-fn default_host() -> String {
-    "0.0.0.0".to_owned()
-}
-
-fn default_port() -> u16 {
-    8080
-}
-
-fn default_max_body_size() -> usize {
-    16 * 1_024 * 1_024
-}
+// -- Impls --
 
 impl Default for KoraConfig {
     fn default() -> Self {
@@ -61,4 +53,18 @@ impl KoraConfig {
             .extract()
             .map_err(Box::new)
     }
+}
+
+// -- Helpers --
+
+fn default_host() -> String {
+    "0.0.0.0".to_owned()
+}
+
+fn default_port() -> u16 {
+    8080
+}
+
+fn default_max_body_size() -> usize {
+    16 * 1_024 * 1_024
 }

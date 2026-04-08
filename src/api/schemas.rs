@@ -11,6 +11,8 @@ use crate::error::KoraError;
 use crate::schema::SchemaFormat;
 use crate::storage::schemas;
 
+// -- Handlers --
+
 /// Retrieve a schema by its global ID.
 ///
 /// `GET /schemas/ids/{id}`
@@ -23,11 +25,15 @@ pub async fn get_schema_by_id(
     State(pool): State<PgPool>,
     Path(id): Path<i64>,
 ) -> Result<impl IntoResponse, KoraError> {
-    let schema_text = schemas::find_by_id(&pool, id)
+    let (schema_text, schema_type) = schemas::find_by_id(&pool, id)
         .await?
         .ok_or(KoraError::SchemaNotFound)?;
 
-    Ok(Json(serde_json::json!({ "schema": schema_text })))
+    Ok(Json(serde_json::json!({
+        "id": id,
+        "schema": schema_text,
+        "schemaType": schema_type,
+    })))
 }
 
 /// List supported schema types.

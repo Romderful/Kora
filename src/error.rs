@@ -7,8 +7,12 @@ use axum::{
 };
 use serde::Serialize;
 
+// -- Constants --
+
 /// Content type for all Schema Registry responses.
 pub const CONTENT_TYPE_SCHEMA_REGISTRY: &str = "application/vnd.schemaregistry.v1+json";
+
+// -- Types --
 
 /// Application-level errors mapped to Confluent Schema Registry error codes.
 #[derive(Debug, thiserror::Error)]
@@ -30,17 +34,19 @@ pub enum KoraError {
     BackendDataStore(String),
 }
 
-impl From<sqlx::Error> for KoraError {
-    fn from(err: sqlx::Error) -> Self {
-        Self::BackendDataStore(err.to_string())
-    }
-}
-
 /// Confluent-compatible JSON error body.
 #[derive(Debug, Serialize)]
 struct ErrorBody {
     error_code: u32,
     message: String,
+}
+
+// -- Impls --
+
+impl From<sqlx::Error> for KoraError {
+    fn from(err: sqlx::Error) -> Self {
+        Self::BackendDataStore(err.to_string())
+    }
 }
 
 impl KoraError {

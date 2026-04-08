@@ -2,6 +2,8 @@
 
 use sqlx::{PgPool, Row};
 
+// -- Types --
+
 /// Data needed to insert a new schema version.
 pub struct NewSchema<'a> {
     /// Subject this schema belongs to.
@@ -15,6 +17,24 @@ pub struct NewSchema<'a> {
     /// Fingerprint of the canonical form.
     pub fingerprint: &'a str,
 }
+
+/// A schema with its subject context, returned by version lookups.
+#[derive(Debug, serde::Serialize)]
+pub struct SchemaVersion {
+    /// Subject name.
+    pub subject: String,
+    /// Global schema ID.
+    pub id: i64,
+    /// Version number within the subject.
+    pub version: i32,
+    /// Raw schema text.
+    pub schema: String,
+    /// Schema format (e.g. "AVRO").
+    #[serde(rename = "schemaType")]
+    pub schema_type: String,
+}
+
+// -- Queries --
 
 /// Find an existing schema ID by subject and fingerprint (for idempotency).
 ///
@@ -53,32 +73,6 @@ pub async fn insert(pool: &PgPool, schema: &NewSchema<'_>) -> Result<i64, sqlx::
     .bind(schema.fingerprint)
     .fetch_one(pool)
     .await
-}
-
-/// A schema with its subject context, returned by version lookups.
-#[derive(Debug, serde::Serialize)]
-pub struct SchemaVersion {
-    /// Subject name.
-    pub subject: String,
-    /// Global schema ID.
-    pub id: i64,
-    /// Version number within the subject.
-    pub version: i32,
-    /// Raw schema text.
-    pub schema: String,
-    /// Schema format (e.g. "AVRO").
-    #[serde(rename = "schemaType")]
-    pub schema_type: String,
-}
-
-fn row_to_schema_version(row: &sqlx::postgres::PgRow) -> SchemaVersion {
-    SchemaVersion {
-        subject: row.get("subject"),
-        id: row.get("id"),
-        version: row.get("version"),
-        schema: row.get("schema_text"),
-        schema_type: row.get("schema_type"),
-    }
 }
 
 /// Find a schema by subject name and version number.
@@ -146,29 +140,93 @@ pub async fn find_by_subject_fingerprint(
     .map(|opt| opt.as_ref().map(row_to_schema_version))
 }
 
-/// List all non-deleted version numbers for a subject, sorted ascending.
+/// Soft-delete the latest schema version for a subject. Returns the version number if found.
 ///
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn list_versions(pool: &PgPool, subject: &str) -> Result<Vec<i32>, sqlx::Error> {
+pub async fn soft_delete_latest(pool: &PgPool, subject: &str) -> Result<Option<i32>, sqlx::Error> {
     sqlx::query_scalar::<_, i32>(
-        r"SELECT s.version FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
-           WHERE sub.name = $1 AND s.deleted = false ORDER BY s.version",
+        r"UPDATE schemas SET deleted = true
+           WHERE id = (
+             SELECT s.id FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+             WHERE sub.name = $1 AND s.deleted = false
+             ORDER BY s.version DESC LIMIT 1
+           )
+           RETURNING version",
     )
     .bind(subject)
+    .fetch_optional(pool)
+    .await
+}
+
+/// List version numbers for a subject, sorted ascending.
+///
+/// When `include_deleted` is false, returns only active versions.
+/// When true, returns all versions (active + soft-deleted).
+///
+/// # Errors
+///
+/// Returns a database error on connection failure.
+pub async fn list_versions(
+    pool: &PgPool,
+    subject: &str,
+    include_deleted: bool,
+) -> Result<Vec<i32>, sqlx::Error> {
+    sqlx::query_scalar::<_, i32>(
+        r"SELECT s.version FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+           WHERE sub.name = $1 AND (s.deleted = false OR $2) ORDER BY s.version",
+    )
+    .bind(subject)
+    .bind(include_deleted)
     .fetch_all(pool)
     .await
 }
 
-/// Find a schema by its global ID (ignores soft-delete — IDs are permanent).
+/// Soft-delete a single schema version. Returns the version number if found.
 ///
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn find_by_id(pool: &PgPool, id: i64) -> Result<Option<String>, sqlx::Error> {
-    sqlx::query_scalar::<_, String>("SELECT schema_text FROM schemas WHERE id = $1")
+pub async fn soft_delete_version(
+    pool: &PgPool,
+    subject: &str,
+    version: i32,
+) -> Result<Option<i32>, sqlx::Error> {
+    sqlx::query_scalar::<_, i32>(
+        r"UPDATE schemas SET deleted = true
+           WHERE subject_id = (SELECT id FROM subjects WHERE name = $1)
+             AND version = $2 AND deleted = false
+           RETURNING version",
+    )
+    .bind(subject)
+    .bind(version)
+    .fetch_optional(pool)
+    .await
+}
+
+/// Find a schema by its global ID (ignores soft-delete — IDs are permanent).
+/// Returns `(schema_text, schema_type)`.
+///
+/// # Errors
+///
+/// Returns a database error on connection failure.
+pub async fn find_by_id(pool: &PgPool, id: i64) -> Result<Option<(String, String)>, sqlx::Error> {
+    sqlx::query("SELECT schema_text, schema_type FROM schemas WHERE id = $1")
         .bind(id)
         .fetch_optional(pool)
         .await
+        .map(|opt| opt.as_ref().map(|row| (row.get("schema_text"), row.get("schema_type"))))
+}
+
+// -- Helpers --
+
+fn row_to_schema_version(row: &sqlx::postgres::PgRow) -> SchemaVersion {
+    SchemaVersion {
+        subject: row.get("subject"),
+        id: row.get("id"),
+        version: row.get("version"),
+        schema: row.get("schema_text"),
+        schema_type: row.get("schema_type"),
+    }
 }

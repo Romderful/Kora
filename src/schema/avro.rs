@@ -6,6 +6,8 @@ use apache_avro::Schema;
 use crate::error::KoraError;
 use crate::schema::ParsedSchema;
 
+// -- Functions --
+
 /// Parse an Avro schema string and compute its canonical form and fingerprint.
 ///
 /// # Errors

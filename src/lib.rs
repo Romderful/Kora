@@ -2,6 +2,8 @@
 #![deny(missing_docs)]
 #![deny(clippy::pedantic)]
 
+// -- Modules --
+
 pub mod api;
 pub mod config;
 pub mod error;

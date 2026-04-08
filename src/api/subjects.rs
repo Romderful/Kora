@@ -2,19 +2,21 @@
 
 use axum::{
     Json,
-    extract::{Path, State, rejection::JsonRejection},
+    extract::{Path, Query, State, rejection::JsonRejection},
     response::IntoResponse,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sqlx::PgPool;
 
 use crate::error::KoraError;
 use crate::schema::{self, SchemaFormat};
 use crate::storage::{schemas, subjects};
 
-/// Request body for `POST /subjects/{subject}/versions`.
+// -- Types --
+
+/// Request body for schema registration and check endpoints.
 #[derive(Debug, Deserialize)]
-pub struct RegisterSchemaRequest {
+pub struct SchemaRequest {
     /// The raw schema string (JSON-encoded).
     pub schema: String,
     /// Schema format — defaults to AVRO when absent.
@@ -22,12 +24,15 @@ pub struct RegisterSchemaRequest {
     pub schema_type: Option<String>,
 }
 
-/// Response body for successful schema registration.
-#[derive(Debug, Serialize)]
-pub struct RegisterSchemaResponse {
-    /// Globally unique sequential schema ID.
-    pub id: i64,
+/// Query parameters for list endpoints supporting `?deleted=true`.
+#[derive(Debug, Deserialize)]
+pub struct DeletedParam {
+    /// When true, include soft-deleted items in the response.
+    #[serde(default)]
+    pub deleted: bool,
 }
+
+// -- Handlers --
 
 /// Register a schema under a subject.
 ///
@@ -40,7 +45,7 @@ pub struct RegisterSchemaResponse {
 pub async fn register_schema(
     State(pool): State<PgPool>,
     Path(subject): Path<String>,
-    body: Result<Json<RegisterSchemaRequest>, JsonRejection>,
+    body: Result<Json<SchemaRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, KoraError> {
     let Json(body) = body.map_err(|e| KoraError::InvalidSchema(e.body_text()))?;
 
@@ -53,7 +58,7 @@ pub async fn register_schema(
 
     // Idempotency: return existing ID if same schema already registered.
     if let Some(id) = schemas::find_by_fingerprint(&pool, subject_id, &parsed.fingerprint).await? {
-        return Ok(Json(RegisterSchemaResponse { id }));
+        return Ok(Json(serde_json::json!({ "id": id })));
     }
 
     let id = schemas::insert(&pool, &schemas::NewSchema {
@@ -65,43 +70,7 @@ pub async fn register_schema(
     })
     .await?;
 
-    Ok(Json(RegisterSchemaResponse { id }))
-}
-
-/// List all registered subjects.
-///
-/// `GET /subjects`
-///
-/// # Errors
-///
-/// Returns `KoraError::BackendDataStore` (500) for database failures.
-pub async fn list_subjects(
-    State(pool): State<PgPool>,
-) -> Result<impl IntoResponse, KoraError> {
-    let names = subjects::list(&pool).await?;
-    Ok(Json(names))
-}
-
-/// List all versions of a subject.
-///
-/// `GET /subjects/{subject}/versions`
-///
-/// # Errors
-///
-/// Returns `KoraError::SubjectNotFound` (40401) if the subject doesn't exist,
-/// or `KoraError::BackendDataStore` (500) for database failures.
-pub async fn list_versions(
-    State(pool): State<PgPool>,
-    Path(subject): Path<String>,
-) -> Result<impl IntoResponse, KoraError> {
-    validate_subject(&subject)?;
-
-    if !subjects::exists(&pool, &subject).await? {
-        return Err(KoraError::SubjectNotFound);
-    }
-
-    let versions = schemas::list_versions(&pool, &subject).await?;
-    Ok(Json(versions))
+    Ok(Json(serde_json::json!({ "id": id })))
 }
 
 /// Check if a schema is registered under a subject.
@@ -115,7 +84,7 @@ pub async fn list_versions(
 pub async fn check_schema(
     State(pool): State<PgPool>,
     Path(subject): Path<String>,
-    body: Result<Json<RegisterSchemaRequest>, JsonRejection>,
+    body: Result<Json<SchemaRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, KoraError> {
     let Json(body) = body.map_err(|e| KoraError::InvalidSchema(e.body_text()))?;
 
@@ -133,6 +102,45 @@ pub async fn check_schema(
         .ok_or(KoraError::SchemaNotFound)?;
 
     Ok(Json(sv))
+}
+
+/// List registered subjects.
+///
+/// `GET /subjects` — non-deleted subjects (default).
+/// `GET /subjects?deleted=true` — all subjects (including soft-deleted).
+///
+/// # Errors
+///
+/// Returns `KoraError::BackendDataStore` (500) for database failures.
+pub async fn list_subjects(
+    State(pool): State<PgPool>,
+    Query(params): Query<DeletedParam>,
+) -> Result<impl IntoResponse, KoraError> {
+    let names = subjects::list(&pool, params.deleted).await?;
+    Ok(Json(names))
+}
+
+/// List all versions of a subject.
+///
+/// `GET /subjects/{subject}/versions`
+///
+/// # Errors
+///
+/// Returns `KoraError::SubjectNotFound` (40401) if the subject doesn't exist,
+/// or `KoraError::BackendDataStore` (500) for database failures.
+pub async fn list_versions(
+    State(pool): State<PgPool>,
+    Path(subject): Path<String>,
+    Query(params): Query<DeletedParam>,
+) -> Result<impl IntoResponse, KoraError> {
+    validate_subject(&subject)?;
+
+    if !subjects::exists(&pool, &subject).await? {
+        return Err(KoraError::SubjectNotFound);
+    }
+
+    let versions = schemas::list_versions(&pool, &subject, params.deleted).await?;
+    Ok(Json(versions))
 }
 
 /// Retrieve a schema by subject and version.
@@ -167,6 +175,60 @@ pub async fn get_schema_by_version(
         None => Err(KoraError::SubjectNotFound),
     }
 }
+
+/// Soft-delete a subject and all its versions.
+///
+/// `DELETE /subjects/{subject}`
+///
+/// # Errors
+///
+/// Returns `KoraError::SubjectNotFound` (40401) if the subject doesn't exist.
+pub async fn delete_subject(
+    State(pool): State<PgPool>,
+    Path(subject): Path<String>,
+) -> Result<impl IntoResponse, KoraError> {
+    validate_subject(&subject)?;
+
+    if !subjects::exists(&pool, &subject).await? {
+        return Err(KoraError::SubjectNotFound);
+    }
+
+    let versions = subjects::soft_delete(&pool, &subject).await?;
+    Ok(Json(versions))
+}
+
+/// Soft-delete a single schema version.
+///
+/// `DELETE /subjects/{subject}/versions/{version}`
+///
+/// # Errors
+///
+/// Returns `KoraError::SubjectNotFound` (40401) or `KoraError::VersionNotFound` (40402).
+pub async fn delete_version(
+    State(pool): State<PgPool>,
+    Path((subject, version)): Path<(String, String)>,
+) -> Result<impl IntoResponse, KoraError> {
+    validate_subject(&subject)?;
+
+    if !subjects::exists(&pool, &subject).await? {
+        return Err(KoraError::SubjectNotFound);
+    }
+
+    let deleted = if version == "latest" {
+        schemas::soft_delete_latest(&pool, &subject).await?
+    } else {
+        let v: i32 = version.parse().map_err(|_| KoraError::VersionNotFound)?;
+        if v < 1 {
+            return Err(KoraError::VersionNotFound);
+        }
+        schemas::soft_delete_version(&pool, &subject, v).await?
+    }
+    .ok_or(KoraError::VersionNotFound)?;
+
+    Ok(Json(deleted))
+}
+
+// -- Helpers --
 
 /// Maximum allowed length for a subject name.
 const MAX_SUBJECT_LENGTH: usize = 255;

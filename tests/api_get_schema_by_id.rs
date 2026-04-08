@@ -35,6 +35,8 @@ async fn get_schema_by_id_returns_schema() {
 
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["schema"].as_str().unwrap(), VALID_AVRO);
+    assert_eq!(body["schemaType"], "AVRO");
+    assert_eq!(body["id"], id);
 }
 
 #[tokio::test]

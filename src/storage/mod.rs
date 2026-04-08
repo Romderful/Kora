@@ -6,6 +6,8 @@ pub mod subjects;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
+// -- Pool --
+
 /// Create a connection pool and run embedded migrations.
 ///
 /// # Errors

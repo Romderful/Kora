@@ -8,6 +8,8 @@ pub mod subjects;
 use axum::{Router, extract::DefaultBodyLimit, routing::{get, post}};
 use sqlx::PgPool;
 
+// -- Router --
+
 /// Build the application router with all routes.
 pub fn router(pool: PgPool, max_body_size: usize) -> Router {
     Router::new()
@@ -15,14 +17,14 @@ pub fn router(pool: PgPool, max_body_size: usize) -> Router {
         .route("/schemas/ids/{id}", get(schemas::get_schema_by_id))
         .route("/schemas/types", get(schemas::list_types))
         .route("/subjects", get(subjects::list_subjects))
-        .route("/subjects/{subject}", post(subjects::check_schema))
+        .route("/subjects/{subject}", post(subjects::check_schema).delete(subjects::delete_subject))
         .route(
             "/subjects/{subject}/versions",
             get(subjects::list_versions).post(subjects::register_schema),
         )
         .route(
             "/subjects/{subject}/versions/{version}",
-            get(subjects::get_schema_by_version),
+            get(subjects::get_schema_by_version).delete(subjects::delete_version),
         )
         .layer(DefaultBodyLimit::max(max_body_size))
         .layer(middleware::content_type_layer())
