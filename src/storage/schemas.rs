@@ -160,6 +160,30 @@ pub async fn soft_delete_latest(pool: &PgPool, subject: &str) -> Result<Option<i
     .await
 }
 
+/// Hard-delete a soft-deleted schema version. Returns the version number if found.
+///
+/// Only operates on rows where `deleted = true`.
+///
+/// # Errors
+///
+/// Returns a database error on connection failure.
+pub async fn hard_delete_version(
+    pool: &PgPool,
+    subject: &str,
+    version: i32,
+) -> Result<Option<i32>, sqlx::Error> {
+    sqlx::query_scalar::<_, i32>(
+        r"DELETE FROM schemas
+           WHERE subject_id = (SELECT id FROM subjects WHERE name = $1)
+             AND version = $2 AND deleted = true
+           RETURNING version",
+    )
+    .bind(subject)
+    .bind(version)
+    .fetch_optional(pool)
+    .await
+}
+
 /// List version numbers for a subject, sorted ascending.
 ///
 /// When `include_deleted` is false, returns only active versions.

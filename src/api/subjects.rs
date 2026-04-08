@@ -32,6 +32,14 @@ pub struct DeletedParam {
     pub deleted: bool,
 }
 
+/// Query parameters for DELETE endpoints supporting `?permanent=true`.
+#[derive(Debug, Deserialize)]
+pub struct PermanentParam {
+    /// When true, hard-delete (requires prior soft-delete).
+    #[serde(default)]
+    pub permanent: bool,
+}
+
 // -- Handlers --
 
 /// Register a schema under a subject.
@@ -162,10 +170,7 @@ pub async fn get_schema_by_version(
     let row = if version == "latest" {
         schemas::find_latest_by_subject(&pool, &subject).await?
     } else {
-        let v: i32 = version.parse().map_err(|_| KoraError::VersionNotFound)?;
-        if v < 1 {
-            return Err(KoraError::VersionNotFound);
-        }
+        let v = parse_version(&version)?;
         schemas::find_by_subject_version(&pool, &subject, v).await?
     };
 
@@ -182,24 +187,34 @@ pub async fn get_schema_by_version(
 ///
 /// # Errors
 ///
-/// Returns `KoraError::SubjectNotFound` (40401) if the subject doesn't exist.
+/// Returns `KoraError::SubjectNotFound` (40401) if the subject doesn't exist
+/// (or isn't soft-deleted when `permanent=true`).
 pub async fn delete_subject(
     State(pool): State<PgPool>,
     Path(subject): Path<String>,
+    Query(params): Query<PermanentParam>,
 ) -> Result<impl IntoResponse, KoraError> {
     validate_subject(&subject)?;
 
-    if !subjects::exists(&pool, &subject).await? {
-        return Err(KoraError::SubjectNotFound);
+    if params.permanent {
+        let versions = subjects::hard_delete(&pool, &subject).await?;
+        if versions.is_empty() {
+            return Err(KoraError::SubjectNotFound);
+        }
+        Ok(Json(versions))
+    } else {
+        if !subjects::exists(&pool, &subject).await? {
+            return Err(KoraError::SubjectNotFound);
+        }
+        let versions = subjects::soft_delete(&pool, &subject).await?;
+        Ok(Json(versions))
     }
-
-    let versions = subjects::soft_delete(&pool, &subject).await?;
-    Ok(Json(versions))
 }
 
-/// Soft-delete a single schema version.
+/// Delete a single schema version (soft or hard).
 ///
 /// `DELETE /subjects/{subject}/versions/{version}`
+/// `DELETE /subjects/{subject}/versions/{version}?permanent=true`
 ///
 /// # Errors
 ///
@@ -207,21 +222,23 @@ pub async fn delete_subject(
 pub async fn delete_version(
     State(pool): State<PgPool>,
     Path((subject, version)): Path<(String, String)>,
+    Query(params): Query<PermanentParam>,
 ) -> Result<impl IntoResponse, KoraError> {
     validate_subject(&subject)?;
 
-    if !subjects::exists(&pool, &subject).await? {
-        return Err(KoraError::SubjectNotFound);
-    }
-
-    let deleted = if version == "latest" {
-        schemas::soft_delete_latest(&pool, &subject).await?
+    let deleted = if params.permanent {
+        let v = parse_version(&version)?;
+        schemas::hard_delete_version(&pool, &subject, v).await?
     } else {
-        let v: i32 = version.parse().map_err(|_| KoraError::VersionNotFound)?;
-        if v < 1 {
-            return Err(KoraError::VersionNotFound);
+        if !subjects::exists(&pool, &subject).await? {
+            return Err(KoraError::SubjectNotFound);
         }
-        schemas::soft_delete_version(&pool, &subject, v).await?
+        if version == "latest" {
+            schemas::soft_delete_latest(&pool, &subject).await?
+        } else {
+            let v = parse_version(&version)?;
+            schemas::soft_delete_version(&pool, &subject, v).await?
+        }
     }
     .ok_or(KoraError::VersionNotFound)?;
 
@@ -251,4 +268,13 @@ fn validate_subject(subject: &str) -> Result<(), KoraError> {
         ));
     }
     Ok(())
+}
+
+/// Parse a version string to a positive i32.
+fn parse_version(version: &str) -> Result<i32, KoraError> {
+    let v: i32 = version.parse().map_err(|_| KoraError::VersionNotFound)?;
+    if v < 1 {
+        return Err(KoraError::VersionNotFound);
+    }
+    Ok(v)
 }

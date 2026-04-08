@@ -74,6 +74,37 @@ pub async fn soft_delete(pool: &PgPool, name: &str) -> Result<Vec<i32>, sqlx::Er
     Ok(versions)
 }
 
+/// Hard-delete a soft-deleted subject and all its schemas. Returns the deleted
+/// version numbers sorted ascending. Runs in a transaction.
+///
+/// Only operates on rows where `deleted = true` (must be soft-deleted first).
+///
+/// # Errors
+///
+/// Returns a database error on connection or transaction failure.
+pub async fn hard_delete(pool: &PgPool, name: &str) -> Result<Vec<i32>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
+    let mut versions = sqlx::query_scalar::<_, i32>(
+        r"DELETE FROM schemas
+           WHERE subject_id = (SELECT id FROM subjects WHERE name = $1) AND deleted = true
+           RETURNING version",
+    )
+    .bind(name)
+    .fetch_all(&mut *tx)
+    .await?;
+
+    sqlx::query("DELETE FROM subjects WHERE name = $1 AND deleted = true")
+        .bind(name)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    versions.sort_unstable();
+    Ok(versions)
+}
+
 /// Check if a subject exists by name.
 ///
 /// # Errors

@@ -3,7 +3,37 @@
 // produce false-positive warnings.
 #![allow(dead_code)]
 
+pub mod api;
+
 use tokio::net::TcpListener;
+
+// -- Constants --
+
+/// Pass to list helpers to include soft-deleted items.
+pub const INCLUDE_DELETED: bool = true;
+
+/// Pass to list helpers to show only active items.
+pub const ACTIVE_ONLY: bool = false;
+
+// -- Fixtures --
+
+/// A simple valid Avro schema with one field.
+pub const AVRO_SCHEMA_V1: &str =
+    r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"}]}"#;
+
+/// A valid Avro schema with two fields (different from V1 to create a new version).
+pub const AVRO_SCHEMA_V2: &str =
+    r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":"string"}]}"#;
+
+/// A valid Avro schema with three fields.
+pub const AVRO_SCHEMA_V3: &str =
+    r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":"string"},{"name":"active","type":"boolean"}]}"#;
+
+/// A valid Avro schema with a different record name (for check-schema tests).
+pub const AVRO_SCHEMA_OTHER: &str =
+    r#"{"type":"record","name":"Other","fields":[{"name":"x","type":"string"}]}"#;
+
+// -- Setup --
 
 /// Get `DATABASE_URL` from env. Panics if not set — use `just test` to run.
 pub fn database_url() -> String {
