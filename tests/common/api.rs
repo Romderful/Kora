@@ -17,6 +17,25 @@ pub async fn register_schema(client: &Client, base: &str, subject: &str, schema:
         .unwrap()
 }
 
+/// Register a schema with references under a subject and return the raw response.
+pub async fn register_schema_with_refs(
+    client: &Client,
+    base: &str,
+    subject: &str,
+    schema: &str,
+    refs: &serde_json::Value,
+) -> Response {
+    client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({
+            "schema": schema,
+            "references": refs
+        }))
+        .send()
+        .await
+        .unwrap()
+}
+
 /// Check if a schema is registered under a subject.
 pub async fn check_schema(client: &Client, base: &str, subject: &str, schema: &str) -> Response {
     client

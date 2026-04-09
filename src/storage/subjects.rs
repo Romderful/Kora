@@ -85,6 +85,18 @@ pub async fn soft_delete(pool: &PgPool, name: &str) -> Result<Vec<i32>, sqlx::Er
 pub async fn hard_delete(pool: &PgPool, name: &str) -> Result<Vec<i32>, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
+    // Clean up schema_references for schemas being deleted (FK constraint).
+    sqlx::query(
+        r"DELETE FROM schema_references
+           WHERE schema_id IN (
+             SELECT id FROM schemas
+             WHERE subject_id = (SELECT id FROM subjects WHERE name = $1) AND deleted = true
+           )",
+    )
+    .bind(name)
+    .execute(&mut *tx)
+    .await?;
+
     let mut versions = sqlx::query_scalar::<_, i32>(
         r"DELETE FROM schemas
            WHERE subject_id = (SELECT id FROM subjects WHERE name = $1) AND deleted = true

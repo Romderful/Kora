@@ -181,7 +181,23 @@ pub async fn hard_delete_version(
     subject: &str,
     version: i32,
 ) -> Result<Option<i32>, sqlx::Error> {
-    sqlx::query_scalar::<_, i32>(
+    let mut tx = pool.begin().await?;
+
+    // Clean up schema_references for the schema being deleted (FK constraint).
+    sqlx::query(
+        r"DELETE FROM schema_references
+           WHERE schema_id = (
+             SELECT id FROM schemas
+             WHERE subject_id = (SELECT id FROM subjects WHERE name = $1)
+               AND version = $2 AND deleted = true
+           )",
+    )
+    .bind(subject)
+    .bind(version)
+    .execute(&mut *tx)
+    .await?;
+
+    let result = sqlx::query_scalar::<_, i32>(
         r"DELETE FROM schemas
            WHERE subject_id = (SELECT id FROM subjects WHERE name = $1)
              AND version = $2 AND deleted = true
@@ -189,8 +205,11 @@ pub async fn hard_delete_version(
     )
     .bind(subject)
     .bind(version)
-    .fetch_optional(pool)
-    .await
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(result)
 }
 
 /// List version numbers for a subject, sorted ascending.

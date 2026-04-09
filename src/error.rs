@@ -29,6 +29,12 @@ pub enum KoraError {
     /// Schema not found (40403).
     #[error("Schema not found")]
     SchemaNotFound,
+    /// Schema reference not found (42201).
+    #[error("Invalid schema: {0}")]
+    ReferenceNotFound(String),
+    /// Schema is referenced and cannot be deleted (42206).
+    #[error("One or more references exist to the schema {0}")]
+    ReferenceExists(String),
     /// Backend data store error (50001).
     #[error("Error in the backend data store: {0}")]
     BackendDataStore(String),
@@ -53,10 +59,11 @@ impl KoraError {
     /// Confluent numeric error code.
     const fn error_code(&self) -> u32 {
         match self {
-            Self::InvalidSchema(_) => 42201,
+            Self::InvalidSchema(_) | Self::ReferenceNotFound(_) => 42201,
             Self::SubjectNotFound => 40401,
             Self::VersionNotFound => 40402,
             Self::SchemaNotFound => 40403,
+            Self::ReferenceExists(_) => 42206,
             Self::BackendDataStore(_) => 50001,
         }
     }
@@ -64,7 +71,9 @@ impl KoraError {
     /// HTTP status code derived from the Confluent error code.
     const fn status_code(&self) -> StatusCode {
         match self {
-            Self::InvalidSchema(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::InvalidSchema(_) | Self::ReferenceNotFound(_) | Self::ReferenceExists(_) => {
+                StatusCode::UNPROCESSABLE_ENTITY
+            }
             Self::SubjectNotFound | Self::VersionNotFound | Self::SchemaNotFound => {
                 StatusCode::NOT_FOUND
             }

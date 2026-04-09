@@ -10,9 +10,20 @@ use sqlx::PgPool;
 
 use crate::error::KoraError;
 use crate::schema::{self, SchemaFormat};
-use crate::storage::{schemas, subjects};
+use crate::storage::{references, schemas, subjects};
 
 // -- Types --
+
+/// A schema reference entry (e.g. Protobuf imports, JSON Schema `$ref`).
+#[derive(Debug, Deserialize, Clone)]
+pub struct SchemaReference {
+    /// Logical name of the referenced schema (e.g. "User").
+    pub name: String,
+    /// Subject under which the referenced schema is registered.
+    pub subject: String,
+    /// Version number of the referenced schema.
+    pub version: i32,
+}
 
 /// Request body for schema registration and check endpoints.
 #[derive(Debug, Deserialize)]
@@ -22,6 +33,9 @@ pub struct SchemaRequest {
     /// Schema format — defaults to AVRO when absent.
     #[serde(rename = "schemaType")]
     pub schema_type: Option<String>,
+    /// Optional schema references (for Protobuf imports, JSON Schema `$ref`, etc.).
+    #[serde(default)]
+    pub references: Option<Vec<SchemaReference>>,
 }
 
 /// Query parameters for list endpoints supporting `?deleted=true`.
@@ -62,6 +76,12 @@ pub async fn register_schema(
     let format = SchemaFormat::from_optional(body.schema_type.as_deref())?;
     let parsed = schema::parse(format, &body.schema)?;
 
+    // Validate references before any writes.
+    let refs = body.references.as_deref().unwrap_or_default();
+    if !refs.is_empty() {
+        references::validate_references(&pool, refs).await?;
+    }
+
     let subject_id = subjects::upsert(&pool, &subject).await?;
 
     // Idempotency: return existing ID if same schema already registered.
@@ -77,6 +97,11 @@ pub async fn register_schema(
         fingerprint: &parsed.fingerprint,
     })
     .await?;
+
+    // Store references after schema insert.
+    if !refs.is_empty() {
+        references::insert(&pool, id, refs).await?;
+    }
 
     Ok(Json(serde_json::json!({ "id": id })))
 }
@@ -197,6 +222,16 @@ pub async fn delete_subject(
     validate_subject(&subject)?;
 
     if params.permanent {
+        // Check if any version of this subject is referenced by other schemas.
+        let versions_to_delete =
+            schemas::list_versions(&pool, &subject, true).await?;
+        for v in &versions_to_delete {
+            if references::is_version_referenced(&pool, &subject, *v).await? {
+                return Err(KoraError::ReferenceExists(format!(
+                    "{subject} version {v}"
+                )));
+            }
+        }
         let versions = subjects::hard_delete(&pool, &subject).await?;
         if versions.is_empty() {
             return Err(KoraError::SubjectNotFound);
@@ -228,6 +263,11 @@ pub async fn delete_version(
 
     let deleted = if params.permanent {
         let v = parse_version(&version)?;
+        if references::is_version_referenced(&pool, &subject, v).await? {
+            return Err(KoraError::ReferenceExists(format!(
+                "{subject} version {v}"
+            )));
+        }
         schemas::hard_delete_version(&pool, &subject, v).await?
     } else {
         if !subjects::exists(&pool, &subject).await? {
