@@ -32,6 +32,9 @@ pub enum KoraError {
     /// Schema reference not found (42201).
     #[error("Invalid schema: {0}")]
     ReferenceNotFound(String),
+    /// Invalid compatibility level (42203).
+    #[error("Invalid compatibility level: {0}")]
+    InvalidCompatibilityLevel(String),
     /// Schema is referenced and cannot be deleted (42206).
     #[error("One or more references exist to the schema {0}")]
     ReferenceExists(String),
@@ -60,6 +63,7 @@ impl KoraError {
     const fn error_code(&self) -> u32 {
         match self {
             Self::InvalidSchema(_) | Self::ReferenceNotFound(_) => 42201,
+            Self::InvalidCompatibilityLevel(_) => 42203,
             Self::SubjectNotFound => 40401,
             Self::VersionNotFound => 40402,
             Self::SchemaNotFound => 40403,
@@ -71,9 +75,10 @@ impl KoraError {
     /// HTTP status code derived from the Confluent error code.
     const fn status_code(&self) -> StatusCode {
         match self {
-            Self::InvalidSchema(_) | Self::ReferenceNotFound(_) | Self::ReferenceExists(_) => {
-                StatusCode::UNPROCESSABLE_ENTITY
-            }
+            Self::InvalidSchema(_)
+            | Self::ReferenceNotFound(_)
+            | Self::InvalidCompatibilityLevel(_)
+            | Self::ReferenceExists(_) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::SubjectNotFound | Self::VersionNotFound | Self::SchemaNotFound => {
                 StatusCode::NOT_FOUND
             }

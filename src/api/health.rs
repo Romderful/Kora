@@ -20,7 +20,7 @@ struct HealthResponse {
 // -- Handlers --
 
 /// `GET /health` — returns 200 when PG is reachable, 503 otherwise.
-pub async fn health(State(pool): State<PgPool>) -> Response {
+pub async fn check_health(State(pool): State<PgPool>) -> Response {
     let ok = sqlx::query_scalar::<_, i32>("SELECT 1")
         .fetch_one(&pool)
         .await

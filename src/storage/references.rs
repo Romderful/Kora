@@ -46,7 +46,7 @@ pub async fn validate_references(
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn insert(
+pub async fn insert_references(
     pool: &PgPool,
     schema_id: i64,
     refs: &[SchemaReference],

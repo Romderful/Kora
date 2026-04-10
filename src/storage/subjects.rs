@@ -9,7 +9,7 @@ use sqlx::PgPool;
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn upsert(pool: &PgPool, name: &str) -> Result<i64, sqlx::Error> {
+pub async fn upsert_subject(pool: &PgPool, name: &str) -> Result<i64, sqlx::Error> {
     let id = sqlx::query_scalar::<_, i64>(
         r"WITH ins AS (
              INSERT INTO subjects (name) VALUES ($1)
@@ -36,7 +36,7 @@ pub async fn upsert(pool: &PgPool, name: &str) -> Result<i64, sqlx::Error> {
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn list(pool: &PgPool, include_deleted: bool) -> Result<Vec<String>, sqlx::Error> {
+pub async fn list_subjects(pool: &PgPool, include_deleted: bool) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar::<_, String>(
         "SELECT name FROM subjects WHERE deleted = false OR $1 ORDER BY name",
     )
@@ -51,7 +51,7 @@ pub async fn list(pool: &PgPool, include_deleted: bool) -> Result<Vec<String>, s
 /// # Errors
 ///
 /// Returns a database error on connection or transaction failure.
-pub async fn soft_delete(pool: &PgPool, name: &str) -> Result<Vec<i32>, sqlx::Error> {
+pub async fn soft_delete_subject(pool: &PgPool, name: &str) -> Result<Vec<i32>, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     let mut versions = sqlx::query_scalar::<_, i32>(
@@ -82,7 +82,7 @@ pub async fn soft_delete(pool: &PgPool, name: &str) -> Result<Vec<i32>, sqlx::Er
 /// # Errors
 ///
 /// Returns a database error on connection or transaction failure.
-pub async fn hard_delete(pool: &PgPool, name: &str) -> Result<Vec<i32>, sqlx::Error> {
+pub async fn hard_delete_subject(pool: &PgPool, name: &str) -> Result<Vec<i32>, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     // Clean up schema_references for schemas being deleted (FK constraint).
@@ -117,12 +117,26 @@ pub async fn hard_delete(pool: &PgPool, name: &str) -> Result<Vec<i32>, sqlx::Er
     Ok(versions)
 }
 
+/// Find a subject's ID by name. Returns `None` if the subject doesn't exist or is soft-deleted.
+///
+/// # Errors
+///
+/// Returns a database error on connection failure.
+pub async fn find_subject_id_by_name(pool: &PgPool, name: &str) -> Result<Option<i64>, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM subjects WHERE name = $1 AND deleted = false",
+    )
+    .bind(name)
+    .fetch_optional(pool)
+    .await
+}
+
 /// Check if a subject exists by name.
 ///
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn exists(pool: &PgPool, name: &str) -> Result<bool, sqlx::Error> {
+pub async fn subject_exists(pool: &PgPool, name: &str) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM subjects WHERE name = $1 AND deleted = false)",
     )

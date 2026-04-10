@@ -82,14 +82,14 @@ pub async fn register_schema(
         references::validate_references(&pool, refs).await?;
     }
 
-    let subject_id = subjects::upsert(&pool, &subject).await?;
+    let subject_id = subjects::upsert_subject(&pool, &subject).await?;
 
     // Idempotency: return existing ID if same schema already registered.
-    if let Some(id) = schemas::find_by_fingerprint(&pool, subject_id, &parsed.fingerprint).await? {
+    if let Some(id) = schemas::find_schema_id_by_subject_id_and_fingerprint(&pool, subject_id, &parsed.fingerprint).await? {
         return Ok(Json(serde_json::json!({ "id": id })));
     }
 
-    let id = schemas::insert(&pool, &schemas::NewSchema {
+    let id = schemas::insert_schema(&pool, &schemas::NewSchema {
         subject_id,
         schema_type: format.as_str(),
         schema_text: &body.schema,
@@ -100,7 +100,7 @@ pub async fn register_schema(
 
     // Store references after schema insert.
     if !refs.is_empty() {
-        references::insert(&pool, id, refs).await?;
+        references::insert_references(&pool, id, refs).await?;
     }
 
     Ok(Json(serde_json::json!({ "id": id })))
@@ -126,11 +126,11 @@ pub async fn check_schema(
     let format = SchemaFormat::from_optional(body.schema_type.as_deref())?;
     let parsed = schema::parse(format, &body.schema)?;
 
-    if !subjects::exists(&pool, &subject).await? {
-        return Err(KoraError::SubjectNotFound);
-    }
+    let subject_id = subjects::find_subject_id_by_name(&pool, &subject)
+        .await?
+        .ok_or(KoraError::SubjectNotFound)?;
 
-    let sv = schemas::find_by_subject_fingerprint(&pool, &subject, &parsed.fingerprint)
+    let sv = schemas::find_schema_by_subject_id_and_fingerprint(&pool, subject_id, &parsed.fingerprint)
         .await?
         .ok_or(KoraError::SchemaNotFound)?;
 
@@ -149,7 +149,7 @@ pub async fn list_subjects(
     State(pool): State<PgPool>,
     Query(params): Query<DeletedParam>,
 ) -> Result<impl IntoResponse, KoraError> {
-    let names = subjects::list(&pool, params.deleted).await?;
+    let names = subjects::list_subjects(&pool, params.deleted).await?;
     Ok(Json(names))
 }
 
@@ -168,11 +168,11 @@ pub async fn list_versions(
 ) -> Result<impl IntoResponse, KoraError> {
     validate_subject(&subject)?;
 
-    if !subjects::exists(&pool, &subject).await? {
+    if !subjects::subject_exists(&pool, &subject).await? {
         return Err(KoraError::SubjectNotFound);
     }
 
-    let versions = schemas::list_versions(&pool, &subject, params.deleted).await?;
+    let versions = schemas::list_schema_versions(&pool, &subject, params.deleted).await?;
     Ok(Json(versions))
 }
 
@@ -193,15 +193,15 @@ pub async fn get_schema_by_version(
     validate_subject(&subject)?;
 
     let row = if version == "latest" {
-        schemas::find_latest_by_subject(&pool, &subject).await?
+        schemas::find_latest_schema_by_subject(&pool, &subject).await?
     } else {
         let v = parse_version(&version)?;
-        schemas::find_by_subject_version(&pool, &subject, v).await?
+        schemas::find_schema_by_subject_version(&pool, &subject, v).await?
     };
 
     match row {
         Some(sv) => Ok(Json(sv)),
-        None if subjects::exists(&pool, &subject).await? => Err(KoraError::VersionNotFound),
+        None if subjects::subject_exists(&pool, &subject).await? => Err(KoraError::VersionNotFound),
         None => Err(KoraError::SubjectNotFound),
     }
 }
@@ -224,7 +224,7 @@ pub async fn delete_subject(
     if params.permanent {
         // Check if any version of this subject is referenced by other schemas.
         let versions_to_delete =
-            schemas::list_versions(&pool, &subject, true).await?;
+            schemas::list_schema_versions(&pool, &subject, true).await?;
         for v in &versions_to_delete {
             if references::is_version_referenced(&pool, &subject, *v).await? {
                 return Err(KoraError::ReferenceExists(format!(
@@ -232,16 +232,16 @@ pub async fn delete_subject(
                 )));
             }
         }
-        let versions = subjects::hard_delete(&pool, &subject).await?;
+        let versions = subjects::hard_delete_subject(&pool, &subject).await?;
         if versions.is_empty() {
             return Err(KoraError::SubjectNotFound);
         }
         Ok(Json(versions))
     } else {
-        if !subjects::exists(&pool, &subject).await? {
+        if !subjects::subject_exists(&pool, &subject).await? {
             return Err(KoraError::SubjectNotFound);
         }
-        let versions = subjects::soft_delete(&pool, &subject).await?;
+        let versions = subjects::soft_delete_subject(&pool, &subject).await?;
         Ok(Json(versions))
     }
 }
@@ -268,16 +268,16 @@ pub async fn delete_version(
                 "{subject} version {v}"
             )));
         }
-        schemas::hard_delete_version(&pool, &subject, v).await?
+        schemas::hard_delete_schema_version(&pool, &subject, v).await?
     } else {
-        if !subjects::exists(&pool, &subject).await? {
+        if !subjects::subject_exists(&pool, &subject).await? {
             return Err(KoraError::SubjectNotFound);
         }
         if version == "latest" {
-            schemas::soft_delete_latest(&pool, &subject).await?
+            schemas::soft_delete_latest_schema(&pool, &subject).await?
         } else {
             let v = parse_version(&version)?;
-            schemas::soft_delete_version(&pool, &subject, v).await?
+            schemas::soft_delete_schema_version(&pool, &subject, v).await?
         }
     }
     .ok_or(KoraError::VersionNotFound)?;

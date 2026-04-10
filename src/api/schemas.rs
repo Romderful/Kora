@@ -25,7 +25,7 @@ pub async fn get_schema_by_id(
     State(pool): State<PgPool>,
     Path(id): Path<i64>,
 ) -> Result<impl IntoResponse, KoraError> {
-    let (schema_text, schema_type) = schemas::find_by_id(&pool, id)
+    let (schema_text, schema_type) = schemas::find_schema_by_id(&pool, id)
         .await?
         .ok_or(KoraError::SchemaNotFound)?;
 
@@ -48,10 +48,10 @@ pub async fn get_subjects_by_schema_id(
     State(pool): State<PgPool>,
     Path(id): Path<i64>,
 ) -> Result<impl IntoResponse, KoraError> {
-    if !schemas::exists(&pool, id).await? {
+    if !schemas::schema_exists(&pool, id).await? {
         return Err(KoraError::SchemaNotFound);
     }
-    let subjects = schemas::find_subjects_by_id(&pool, id).await?;
+    let subjects = schemas::find_subjects_by_schema_id(&pool, id).await?;
     Ok(Json(subjects))
 }
 
@@ -67,16 +67,16 @@ pub async fn get_versions_by_schema_id(
     State(pool): State<PgPool>,
     Path(id): Path<i64>,
 ) -> Result<impl IntoResponse, KoraError> {
-    if !schemas::exists(&pool, id).await? {
+    if !schemas::schema_exists(&pool, id).await? {
         return Err(KoraError::SchemaNotFound);
     }
-    let versions = schemas::find_versions_by_id(&pool, id).await?;
+    let versions = schemas::find_versions_by_schema_id(&pool, id).await?;
     Ok(Json(versions))
 }
 
 /// List supported schema types.
 ///
 /// `GET /schemas/types`
-pub async fn list_types() -> impl IntoResponse {
+pub async fn list_schema_types() -> impl IntoResponse {
     Json(SchemaFormat::KNOWN_TYPES)
 }

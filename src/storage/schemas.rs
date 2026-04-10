@@ -50,7 +50,7 @@ pub struct SchemaVersion {
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn find_by_fingerprint(
+pub async fn find_schema_id_by_subject_id_and_fingerprint(
     pool: &PgPool,
     subject_id: i64,
     fingerprint: &str,
@@ -69,7 +69,7 @@ pub async fn find_by_fingerprint(
 /// # Errors
 ///
 /// Returns a database error on connection or constraint failure.
-pub async fn insert(pool: &PgPool, schema: &NewSchema<'_>) -> Result<i64, sqlx::Error> {
+pub async fn insert_schema(pool: &PgPool, schema: &NewSchema<'_>) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar::<_, i64>(
         r"INSERT INTO schemas (subject_id, version, schema_type, schema_text, canonical_form, fingerprint)
            VALUES ($1, COALESCE((SELECT MAX(version) FROM schemas WHERE subject_id = $1), 0) + 1, $2, $3, $4, $5)
@@ -89,7 +89,7 @@ pub async fn insert(pool: &PgPool, schema: &NewSchema<'_>) -> Result<i64, sqlx::
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn find_by_subject_version(
+pub async fn find_schema_by_subject_version(
     pool: &PgPool,
     subject: &str,
     version: i32,
@@ -111,7 +111,7 @@ pub async fn find_by_subject_version(
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn find_latest_by_subject(
+pub async fn find_latest_schema_by_subject(
     pool: &PgPool,
     subject: &str,
 ) -> Result<Option<SchemaVersion>, sqlx::Error> {
@@ -127,22 +127,25 @@ pub async fn find_latest_by_subject(
     .map(|opt| opt.as_ref().map(row_to_schema_version))
 }
 
-/// Find a schema by subject name and fingerprint (for check-if-registered).
+/// Find a schema by subject ID and fingerprint (for check-if-registered).
+///
+/// Returns the full schema version details, unlike
+/// `find_schema_id_by_subject_id_and_fingerprint` which returns only the ID.
 ///
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn find_by_subject_fingerprint(
+pub async fn find_schema_by_subject_id_and_fingerprint(
     pool: &PgPool,
-    subject: &str,
+    subject_id: i64,
     fingerprint: &str,
 ) -> Result<Option<SchemaVersion>, sqlx::Error> {
     sqlx::query(
         r"SELECT s.id, sub.name as subject, s.version, s.schema_type, s.schema_text
            FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
-           WHERE sub.name = $1 AND s.fingerprint = $2 AND s.deleted = false",
+           WHERE s.subject_id = $1 AND s.fingerprint = $2 AND s.deleted = false",
     )
-    .bind(subject)
+    .bind(subject_id)
     .bind(fingerprint)
     .fetch_optional(pool)
     .await
@@ -154,7 +157,7 @@ pub async fn find_by_subject_fingerprint(
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn soft_delete_latest(pool: &PgPool, subject: &str) -> Result<Option<i32>, sqlx::Error> {
+pub async fn soft_delete_latest_schema(pool: &PgPool, subject: &str) -> Result<Option<i32>, sqlx::Error> {
     sqlx::query_scalar::<_, i32>(
         r"UPDATE schemas SET deleted = true
            WHERE id = (
@@ -176,7 +179,7 @@ pub async fn soft_delete_latest(pool: &PgPool, subject: &str) -> Result<Option<i
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn hard_delete_version(
+pub async fn hard_delete_schema_version(
     pool: &PgPool,
     subject: &str,
     version: i32,
@@ -220,7 +223,7 @@ pub async fn hard_delete_version(
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn list_versions(
+pub async fn list_schema_versions(
     pool: &PgPool,
     subject: &str,
     include_deleted: bool,
@@ -240,7 +243,7 @@ pub async fn list_versions(
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn soft_delete_version(
+pub async fn soft_delete_schema_version(
     pool: &PgPool,
     subject: &str,
     version: i32,
@@ -263,7 +266,7 @@ pub async fn soft_delete_version(
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn find_by_id(pool: &PgPool, id: i64) -> Result<Option<(String, String)>, sqlx::Error> {
+pub async fn find_schema_by_id(pool: &PgPool, id: i64) -> Result<Option<(String, String)>, sqlx::Error> {
     sqlx::query("SELECT schema_text, schema_type FROM schemas WHERE id = $1")
         .bind(id)
         .fetch_optional(pool)
@@ -276,7 +279,7 @@ pub async fn find_by_id(pool: &PgPool, id: i64) -> Result<Option<(String, String
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn exists(pool: &PgPool, id: i64) -> Result<bool, sqlx::Error> {
+pub async fn schema_exists(pool: &PgPool, id: i64) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM schemas WHERE id = $1)")
         .bind(id)
         .fetch_one(pool)
@@ -288,7 +291,7 @@ pub async fn exists(pool: &PgPool, id: i64) -> Result<bool, sqlx::Error> {
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn find_subjects_by_id(pool: &PgPool, id: i64) -> Result<Vec<String>, sqlx::Error> {
+pub async fn find_subjects_by_schema_id(pool: &PgPool, id: i64) -> Result<Vec<String>, sqlx::Error> {
     sqlx::query_scalar::<_, String>(
         r"SELECT sub.name
            FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
@@ -305,7 +308,7 @@ pub async fn find_subjects_by_id(pool: &PgPool, id: i64) -> Result<Vec<String>, 
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn find_versions_by_id(
+pub async fn find_versions_by_schema_id(
     pool: &PgPool,
     id: i64,
 ) -> Result<Vec<SubjectVersion>, sqlx::Error> {

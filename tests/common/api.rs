@@ -134,6 +134,15 @@ pub async fn hard_delete_subject(client: &Client, base: &str, subject: &str) -> 
         .unwrap()
 }
 
+/// Hard-delete a single schema version (must be soft-deleted first).
+pub async fn hard_delete_version(client: &Client, base: &str, subject: &str, version: i32) -> Response {
+    client
+        .delete(format!("{base}/subjects/{subject}/versions/{version}?permanent=true"))
+        .send()
+        .await
+        .unwrap()
+}
+
 // -- Cross-reference operations --
 
 /// List subjects associated with a schema ID.
@@ -154,10 +163,46 @@ pub async fn get_versions_by_schema_id(client: &Client, base: &str, id: i64) -> 
         .unwrap()
 }
 
-/// Hard-delete a single schema version (must be soft-deleted first).
-pub async fn hard_delete_version(client: &Client, base: &str, subject: &str, version: i32) -> Response {
+// -- Compatibility operations --
+
+/// Get the global compatibility level.
+pub async fn get_global_compatibility(client: &Client, base: &str) -> Response {
+    client.get(format!("{base}/config")).send().await.unwrap()
+}
+
+/// Set the global compatibility level.
+pub async fn set_global_compatibility(client: &Client, base: &str, compatibility: &str) -> Response {
     client
-        .delete(format!("{base}/subjects/{subject}/versions/{version}?permanent=true"))
+        .put(format!("{base}/config"))
+        .json(&serde_json::json!({"compatibility": compatibility}))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// Get the per-subject compatibility level.
+pub async fn get_subject_compatibility(client: &Client, base: &str, subject: &str) -> Response {
+    client
+        .get(format!("{base}/config/{subject}"))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// Set the per-subject compatibility level.
+pub async fn set_subject_compatibility(client: &Client, base: &str, subject: &str, compatibility: &str) -> Response {
+    client
+        .put(format!("{base}/config/{subject}"))
+        .json(&serde_json::json!({"compatibility": compatibility}))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// Delete the per-subject compatibility level (falls back to global).
+pub async fn delete_subject_compatibility(client: &Client, base: &str, subject: &str) -> Response {
+    client
+        .delete(format!("{base}/config/{subject}"))
         .send()
         .await
         .unwrap()

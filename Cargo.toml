@@ -22,4 +22,5 @@ uuid = { version = "1.23.0", features = ["v4", "serde"] }
 
 [dev-dependencies]
 reqwest = { version = "0.13.2", features = ["json"] }
+serial_test = "3.4.0"
 tokio-test = "0.4.5"
