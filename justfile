@@ -1,11 +1,13 @@
 set dotenv-load
 
 pg_ready := "docker compose exec -T postgres pg_isready -U $POSTGRES_USER > /dev/null 2>&1"
+db_ready := "docker compose exec -T postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c 'SELECT 1' > /dev/null 2>&1"
 
 [private]
 ensure-pg:
     @{{ pg_ready }} || { docker compose up -d postgres; \
       echo "Waiting for PG..."; until {{ pg_ready }}; do sleep 0.3; done; }
+    @until {{ db_ready }}; do sleep 0.3; done
 
 # Build and run everything in Docker
 up:

@@ -10,7 +10,7 @@ use sqlx::PgPool;
 
 use crate::error::KoraError;
 use crate::schema::{self, SchemaFormat};
-use crate::storage::{references, schemas, subjects};
+use crate::storage::{compatibility, references, schemas, subjects};
 use crate::types::SchemaReference;
 
 // -- Types --
@@ -28,12 +28,45 @@ pub struct SchemaRequest {
     pub references: Option<Vec<SchemaReference>>,
 }
 
-/// Query parameters for list endpoints supporting `?deleted=true` with pagination.
+/// Query parameters for `GET /subjects` with Confluent-specific filters.
 #[derive(Debug, Deserialize)]
-pub struct ListParams {
-    /// When true, include soft-deleted items in the response.
+pub struct ListSubjectsParams {
+    /// When true, include soft-deleted subjects in the response.
     #[serde(default)]
     pub deleted: bool,
+    /// When true, return ONLY soft-deleted subjects (takes precedence over `deleted`).
+    #[serde(default, rename = "deletedOnly")]
+    pub deleted_only: bool,
+    /// Accept-and-ignore: Confluent OSS param that overlaps with `deleted`/`deletedOnly`.
+    #[serde(default, rename = "lookupDeletedSubject")]
+    _lookup_deleted_subject: bool,
+    /// Subject name prefix filter. Default `:*:` means match all.
+    #[serde(default = "default_subject_prefix", rename = "subjectPrefix")]
+    pub subject_prefix: String,
+    /// Pagination offset (default 0).
+    #[serde(default)]
+    pub offset: i64,
+    /// Pagination limit (-1 = unlimited, default).
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+}
+
+fn default_subject_prefix() -> String {
+    ":*:".to_string()
+}
+
+/// Query parameters for `GET /subjects/{subject}/versions` with Confluent-specific filters.
+#[derive(Debug, Deserialize)]
+pub struct ListVersionsParams {
+    /// When true, include soft-deleted versions in the response.
+    #[serde(default)]
+    pub deleted: bool,
+    /// When true, return ONLY soft-deleted versions (takes precedence over `deleted`).
+    #[serde(default, rename = "deletedOnly")]
+    pub deleted_only: bool,
+    /// When true, soft-deleted versions appear as negative numbers.
+    #[serde(default, rename = "deletedAsNegative")]
+    pub deleted_as_negative: bool,
     /// Pagination offset (default 0).
     #[serde(default)]
     pub offset: i64,
@@ -47,9 +80,36 @@ pub(crate) const fn default_limit() -> i64 {
     -1
 }
 
+/// Query parameters for schema registration (`POST /subjects/{subject}/versions`).
+#[derive(Debug, Deserialize)]
+pub struct RegisterParams {
+    /// When true, normalize schema before fingerprint comparison (already default behavior).
+    #[serde(default)]
+    pub normalize: bool,
+}
+
+/// Query parameters for schema check (`POST /subjects/{subject}`).
+#[derive(Debug, Deserialize)]
+pub struct CheckParams {
+    /// When true, normalize schema before fingerprint comparison (already default behavior).
+    #[serde(default)]
+    pub normalize: bool,
+    /// When true, include soft-deleted schemas in the lookup.
+    #[serde(default)]
+    pub deleted: bool,
+}
+
+/// Query parameters for `GET /subjects/{subject}/versions/{version}`.
+#[derive(Debug, Deserialize)]
+pub struct GetVersionParams {
+    /// When true, include soft-deleted versions in the lookup.
+    #[serde(default)]
+    pub deleted: bool,
+}
+
 /// Query parameters for DELETE endpoints supporting `?permanent=true`.
 #[derive(Debug, Deserialize)]
-pub struct PermanentParam {
+pub struct PermanentParams {
     /// When true, hard-delete (requires prior soft-delete).
     #[serde(default)]
     pub permanent: bool,
@@ -68,6 +128,7 @@ pub struct PermanentParam {
 pub async fn register_schema(
     State(pool): State<PgPool>,
     Path(subject): Path<String>,
+    Query(params): Query<RegisterParams>,
     body: Result<Json<SchemaRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, KoraError> {
     let Json(body) = body.map_err(|e| KoraError::InvalidSchema(e.body_text()))?;
@@ -76,6 +137,10 @@ pub async fn register_schema(
 
     let format = SchemaFormat::from_optional(body.schema_type.as_deref())?;
     let parsed = schema::parse(format, &body.schema)?;
+
+    // Resolve effective normalize: explicit param OR subject/global config.
+    let normalize = params.normalize
+        || compatibility::get_effective_normalize(&pool, &subject).await?;
 
     // Validate references before any writes.
     let refs = body.references.as_deref().unwrap_or_default();
@@ -91,8 +156,10 @@ pub async fn register_schema(
             schema_text: &body.schema,
             canonical_form: &parsed.canonical_form,
             fingerprint: &parsed.fingerprint,
+            raw_fingerprint: &parsed.raw_fingerprint,
         },
         refs,
+        normalize,
     )
     .await?;
 
@@ -110,6 +177,7 @@ pub async fn register_schema(
 pub async fn check_schema(
     State(pool): State<PgPool>,
     Path(subject): Path<String>,
+    Query(params): Query<CheckParams>,
     body: Result<Json<SchemaRequest>, JsonRejection>,
 ) -> Result<impl IntoResponse, KoraError> {
     let Json(body) = body.map_err(|e| KoraError::InvalidSchema(e.body_text()))?;
@@ -119,15 +187,21 @@ pub async fn check_schema(
     let format = SchemaFormat::from_optional(body.schema_type.as_deref())?;
     let parsed = schema::parse(format, &body.schema)?;
 
-    let subject_id = subjects::find_subject_id_by_name(&pool, &subject)
+    // Resolve effective normalize: explicit param OR subject/global config.
+    let normalize = params.normalize
+        || compatibility::get_effective_normalize(&pool, &subject).await?;
+
+    let fp = if normalize { &parsed.fingerprint } else { &parsed.raw_fingerprint };
+
+    let subject_id = subjects::find_subject_id_by_name(&pool, &subject, params.deleted)
         .await?
         .ok_or(KoraError::SubjectNotFound)?;
 
-    let sv = schemas::find_schema_by_subject_id_and_fingerprint(&pool, subject_id, &parsed.fingerprint)
+    let sv = schemas::find_schema_by_subject_id_and_fingerprint(&pool, subject_id, fp, normalize, params.deleted)
         .await?
         .ok_or(KoraError::SchemaNotFound)?;
 
-    Ok(Json(sv))
+    Ok(Json(load_references(&pool, sv).await?))
 }
 
 /// List registered subjects.
@@ -140,9 +214,22 @@ pub async fn check_schema(
 /// Returns `KoraError::BackendDataStore` (500) for database failures.
 pub async fn list_subjects(
     State(pool): State<PgPool>,
-    Query(params): Query<ListParams>,
+    Query(params): Query<ListSubjectsParams>,
 ) -> Result<impl IntoResponse, KoraError> {
-    let names = subjects::list_subjects(&pool, params.deleted, params.offset.max(0), params.limit).await?;
+    let prefix = if params.subject_prefix == ":*:" || params.subject_prefix.is_empty() {
+        None
+    } else {
+        Some(params.subject_prefix.as_str())
+    };
+    let names = subjects::list_subjects(
+        &pool,
+        params.deleted,
+        params.deleted_only,
+        prefix,
+        params.offset.max(0),
+        params.limit,
+    )
+    .await?;
     Ok(Json(names))
 }
 
@@ -157,15 +244,24 @@ pub async fn list_subjects(
 pub async fn list_versions(
     State(pool): State<PgPool>,
     Path(subject): Path<String>,
-    Query(params): Query<ListParams>,
+    Query(params): Query<ListVersionsParams>,
 ) -> Result<impl IntoResponse, KoraError> {
     validate_subject(&subject)?;
 
-    if !subjects::subject_exists(&pool, &subject).await? {
+    if !subjects::subject_exists(&pool, &subject, params.deleted || params.deleted_only).await? {
         return Err(KoraError::SubjectNotFound);
     }
 
-    let versions = schemas::list_schema_versions(&pool, &subject, params.deleted, params.offset.max(0), params.limit).await?;
+    let versions = schemas::list_schema_versions(
+        &pool,
+        &subject,
+        params.deleted,
+        params.deleted_only,
+        params.deleted_as_negative,
+        params.offset.max(0),
+        params.limit,
+    )
+    .await?;
     Ok(Json(versions))
 }
 
@@ -182,20 +278,23 @@ pub async fn list_versions(
 pub async fn get_schema_by_version(
     State(pool): State<PgPool>,
     Path((subject, version)): Path<(String, String)>,
+    Query(params): Query<GetVersionParams>,
 ) -> Result<impl IntoResponse, KoraError> {
     validate_subject(&subject)?;
 
     let row = if version == "latest" {
-        schemas::find_latest_schema_by_subject(&pool, &subject).await?
+        schemas::find_latest_schema_by_subject(&pool, &subject, params.deleted).await?
     } else {
         let v = parse_version(&version)?;
-        schemas::find_schema_by_subject_version(&pool, &subject, v).await?
+        schemas::find_schema_by_subject_version(&pool, &subject, v, params.deleted).await?
     };
 
-    match row {
-        Some(sv) => Ok(Json(sv)),
-        None if subjects::subject_exists(&pool, &subject).await? => Err(KoraError::VersionNotFound),
-        None => Err(KoraError::SubjectNotFound),
+    if let Some(sv) = row {
+        Ok(Json(load_references(&pool, sv).await?))
+    } else if subjects::subject_exists(&pool, &subject, params.deleted).await? {
+        Err(KoraError::VersionNotFound)
+    } else {
+        Err(KoraError::SubjectNotFound)
     }
 }
 
@@ -210,7 +309,7 @@ pub async fn get_schema_by_version(
 pub async fn delete_subject(
     State(pool): State<PgPool>,
     Path(subject): Path<String>,
-    Query(params): Query<PermanentParam>,
+    Query(params): Query<PermanentParams>,
 ) -> Result<impl IntoResponse, KoraError> {
     validate_subject(&subject)?;
 
@@ -218,12 +317,12 @@ pub async fn delete_subject(
         // Confluent requires subject to be soft-deleted first (40405).
         // subject_exists returns false for both nonexistent AND soft-deleted subjects,
         // so we must distinguish: if active → 40405, if nonexistent → let hard_delete handle 40401.
-        if subjects::subject_exists(&pool, &subject).await? {
+        if subjects::subject_exists(&pool, &subject, false).await? {
             return Err(KoraError::SubjectNotSoftDeleted(subject));
         }
         // Check if any version of this subject is referenced by other schemas.
         let versions_to_delete =
-            schemas::list_schema_versions(&pool, &subject, true, 0, -1).await?;
+            schemas::list_schema_versions(&pool, &subject, true, false, false, 0, -1).await?;
         for v in &versions_to_delete {
             if references::is_version_referenced(&pool, &subject, *v).await? {
                 return Err(KoraError::ReferenceExists(format!(
@@ -237,7 +336,7 @@ pub async fn delete_subject(
         }
         Ok(Json(versions))
     } else {
-        if !subjects::subject_exists(&pool, &subject).await? {
+        if !subjects::subject_exists(&pool, &subject, false).await? {
             return Err(subject_not_found_or_soft_deleted(&pool, &subject).await);
         }
         let versions = subjects::soft_delete_subject(&pool, &subject).await?;
@@ -256,14 +355,14 @@ pub async fn delete_subject(
 pub async fn delete_version(
     State(pool): State<PgPool>,
     Path((subject, version)): Path<(String, String)>,
-    Query(params): Query<PermanentParam>,
+    Query(params): Query<PermanentParams>,
 ) -> Result<impl IntoResponse, KoraError> {
     validate_subject(&subject)?;
 
     let deleted = if params.permanent {
         let v = parse_version(&version)?;
         // Subject must exist (even soft-deleted) for hard-delete to make sense.
-        if !subjects::subject_exists_any(&pool, &subject).await? {
+        if !subjects::subject_exists(&pool, &subject, true).await? {
             return Err(KoraError::SubjectNotFound);
         }
         // Confluent requires version to be soft-deleted first (40407).
@@ -277,7 +376,7 @@ pub async fn delete_version(
         }
         schemas::hard_delete_schema_version(&pool, &subject, v).await?
     } else {
-        if !subjects::subject_exists(&pool, &subject).await? {
+        if !subjects::subject_exists(&pool, &subject, false).await? {
             return Err(KoraError::SubjectNotFound);
         }
         if version == "latest" {
@@ -297,6 +396,15 @@ pub async fn delete_version(
 }
 
 // -- Helpers --
+
+/// Populate schema references on a `SchemaVersion` before returning to the client.
+async fn load_references(
+    pool: &PgPool,
+    mut sv: schemas::SchemaVersion,
+) -> Result<schemas::SchemaVersion, KoraError> {
+    sv.references = references::find_references_by_schema_id(pool, sv.id).await?;
+    Ok(sv)
+}
 
 /// Return `SubjectNotFound` or `SubjectSoftDeleted` based on subject state.
 async fn subject_not_found_or_soft_deleted(pool: &PgPool, subject: &str) -> KoraError {

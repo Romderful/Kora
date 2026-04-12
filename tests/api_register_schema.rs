@@ -93,6 +93,58 @@ async fn register_schema_lowercase_type_succeeds() {
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
+#[tokio::test]
+async fn register_with_normalize_deduplicates_whitespace_variants() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("norm-reg-{}", uuid::Uuid::new_v4());
+
+    let schema_compact = r#"{"type":"record","name":"Norm","fields":[{"name":"id","type":"int"}]}"#;
+    let schema_spaced = r#"{  "type" : "record",  "name" : "Norm",  "fields" : [ { "name" : "id", "type" : "int" } ] }"#;
+
+    let resp1 = client
+        .post(format!("{base}/subjects/{subject}/versions?normalize=true"))
+        .json(&serde_json::json!({"schema": schema_compact}))
+        .send()
+        .await
+        .unwrap();
+    let id1 = resp1.json::<serde_json::Value>().await.unwrap()["id"].as_i64().unwrap();
+
+    let resp2 = client
+        .post(format!("{base}/subjects/{subject}/versions?normalize=true"))
+        .json(&serde_json::json!({"schema": schema_spaced}))
+        .send()
+        .await
+        .unwrap();
+    let id2 = resp2.json::<serde_json::Value>().await.unwrap()["id"].as_i64().unwrap();
+
+    assert_eq!(id1, id2, "normalize=true should deduplicate schemas that differ only in whitespace");
+}
+
+#[tokio::test]
+async fn register_with_subject_config_normalize_deduplicates() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("cfg-norm-{}", uuid::Uuid::new_v4());
+
+    // Set subject-level normalize=true via config endpoint.
+    client
+        .put(format!("{base}/config/{subject}"))
+        .json(&serde_json::json!({"compatibility": "NONE", "normalize": true}))
+        .send()
+        .await
+        .unwrap();
+
+    let schema_compact = r#"{"type":"record","name":"CfgNorm","fields":[{"name":"id","type":"int"}]}"#;
+    let schema_spaced = r#"{  "type" : "record",  "name" : "CfgNorm",  "fields" : [ { "name" : "id", "type" : "int" } ] }"#;
+
+    // Register WITHOUT ?normalize=true — config should drive normalization.
+    let id1 = common::api::register_schema(&client, &base, &subject, schema_compact).await;
+    let id2 = common::api::register_schema(&client, &base, &subject, schema_spaced).await;
+
+    assert_eq!(id1, id2, "subject config normalize=true should deduplicate without query param");
+}
+
 // -- Avro Schema --
 
 #[tokio::test]
@@ -242,7 +294,7 @@ async fn register_json_schema_listed_under_versions() {
 }
 
 #[tokio::test]
-async fn register_json_schema_reordered_keys_deduplicates() {
+async fn register_json_schema_reordered_keys_deduplicates_with_normalize() {
     let base = common::spawn_server().await;
     let client = reqwest::Client::new();
     let subject = format!("json-dedup-{}", uuid::Uuid::new_v4());
@@ -250,9 +302,34 @@ async fn register_json_schema_reordered_keys_deduplicates() {
     let schema_a = r#"{"type":"object","properties":{"name":{"type":"string"}}}"#;
     let schema_b = r#"{"properties":{"name":{"type":"string"}},"type":"object"}"#;
 
+    let resp1 = client
+        .post(format!("{base}/subjects/{subject}/versions?normalize=true"))
+        .json(&serde_json::json!({"schema": schema_a, "schemaType": "JSON"}))
+        .send().await.unwrap();
+    let id1 = resp1.json::<serde_json::Value>().await.unwrap()["id"].as_i64().unwrap();
+
+    let resp2 = client
+        .post(format!("{base}/subjects/{subject}/versions?normalize=true"))
+        .json(&serde_json::json!({"schema": schema_b, "schemaType": "JSON"}))
+        .send().await.unwrap();
+    let id2 = resp2.json::<serde_json::Value>().await.unwrap()["id"].as_i64().unwrap();
+
+    assert_eq!(id1, id2, "normalize=true should deduplicate reordered JSON keys");
+}
+
+#[tokio::test]
+async fn register_json_schema_reordered_keys_creates_new_version_without_normalize() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("json-no-norm-{}", uuid::Uuid::new_v4());
+
+    let schema_a = r#"{"type":"object","properties":{"name":{"type":"string"}}}"#;
+    let schema_b = r#"{"properties":{"name":{"type":"string"}},"type":"object"}"#;
+
     let id1 = common::api::register_schema_with_type(&client, &base, &subject, schema_a, "JSON").await;
     let id2 = common::api::register_schema_with_type(&client, &base, &subject, schema_b, "JSON").await;
-    assert_eq!(id1, id2, "reordered keys should produce same canonical form and deduplicate");
+
+    assert_ne!(id1, id2, "without normalize, different raw text should create separate versions");
 }
 
 // -- Protobuf schema --

@@ -77,6 +77,182 @@ async fn list_versions_with_pagination() {
 }
 
 #[tokio::test]
+async fn list_subjects_with_subject_prefix_filters() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let prefix = format!("pfx-{}", uuid::Uuid::new_v4());
+    let s1 = format!("{prefix}-alpha");
+    let s2 = format!("{prefix}-beta");
+    let other = format!("other-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &s1, common::AVRO_SCHEMA_V1).await;
+    common::api::register_schema(&client, &base, &s2, common::AVRO_SCHEMA_V1).await;
+    common::api::register_schema(&client, &base, &other, common::AVRO_SCHEMA_V1).await;
+
+    let resp = client
+        .get(format!("{base}/subjects?subjectPrefix={prefix}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let names: Vec<String> = resp.json().await.unwrap();
+
+    assert!(names.contains(&s1));
+    assert!(names.contains(&s2));
+    assert!(!names.contains(&other));
+}
+
+#[tokio::test]
+async fn list_subjects_deleted_only_returns_only_soft_deleted() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let active = format!("active-{}", uuid::Uuid::new_v4());
+    let deleted = format!("deleted-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &active, common::AVRO_SCHEMA_V1).await;
+    common::api::register_schema(&client, &base, &deleted, common::AVRO_SCHEMA_V1).await;
+    common::api::delete_subject(&client, &base, &deleted).await;
+
+    let resp = client
+        .get(format!("{base}/subjects?deletedOnly=true"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let names: Vec<String> = resp.json().await.unwrap();
+
+    assert!(names.contains(&deleted), "soft-deleted subject should appear");
+    assert!(!names.contains(&active), "active subject should NOT appear with deletedOnly");
+}
+
+#[tokio::test]
+async fn list_subjects_deleted_only_takes_precedence_over_deleted() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let active = format!("active-prec-{}", uuid::Uuid::new_v4());
+    let deleted = format!("deleted-prec-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &active, common::AVRO_SCHEMA_V1).await;
+    common::api::register_schema(&client, &base, &deleted, common::AVRO_SCHEMA_V1).await;
+    common::api::delete_subject(&client, &base, &deleted).await;
+
+    let resp = client
+        .get(format!("{base}/subjects?deleted=true&deletedOnly=true"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let names: Vec<String> = resp.json().await.unwrap();
+
+    assert!(names.contains(&deleted), "soft-deleted subject should appear");
+    assert!(!names.contains(&active), "active subject should NOT appear — deletedOnly takes precedence");
+}
+
+#[tokio::test]
+async fn list_subjects_subject_prefix_empty_string_returns_all() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let s1 = format!("empty-pfx-{}", uuid::Uuid::new_v4());
+    common::api::register_schema(&client, &base, &s1, common::AVRO_SCHEMA_V1).await;
+
+    let resp = client
+        .get(format!("{base}/subjects?subjectPrefix="))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let names: Vec<String> = resp.json().await.unwrap();
+    assert!(names.contains(&s1));
+}
+
+#[tokio::test]
+async fn list_subjects_lookup_deleted_subject_is_accepted() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{base}/subjects?lookupDeletedSubject=true"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn list_versions_deleted_only_returns_only_soft_deleted() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("ver-do-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V2).await;
+    common::api::delete_version(&client, &base, &subject, "1").await;
+
+    let resp = client
+        .get(format!("{base}/subjects/{subject}/versions?deletedOnly=true"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let versions: Vec<i32> = resp.json().await.unwrap();
+
+    assert_eq!(versions, vec![1], "only soft-deleted version 1 should appear");
+}
+
+#[tokio::test]
+async fn list_versions_deleted_as_negative() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("ver-dan-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V2).await;
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V3).await;
+    common::api::delete_version(&client, &base, &subject, "2").await;
+
+    let resp = client
+        .get(format!(
+            "{base}/subjects/{subject}/versions?deleted=true&deletedAsNegative=true"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let versions: Vec<i32> = resp.json().await.unwrap();
+
+    assert_eq!(versions, vec![1, -2, 3]);
+}
+
+#[tokio::test]
+async fn list_versions_deleted_only_with_deleted_as_negative() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("ver-do-dan-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V2).await;
+    // Soft-delete version 1.
+    common::api::delete_version(&client, &base, &subject, "1").await;
+
+    // deletedOnly=true + deletedAsNegative=true → deleted versions as negative.
+    let resp = client
+        .get(format!(
+            "{base}/subjects/{subject}/versions?deletedOnly=true&deletedAsNegative=true"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let versions: Vec<i32> = resp.json().await.unwrap();
+
+    assert_eq!(versions, vec![-1], "deletedOnly + deletedAsNegative should return negative versions");
+}
+
+#[tokio::test]
 async fn list_versions_unknown_subject_returns_40401() {
     let base = common::spawn_server().await;
     let client = reqwest::Client::new();
@@ -92,4 +268,33 @@ async fn list_versions_unknown_subject_returns_40401() {
 
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error_code"], 40401);
+}
+
+#[tokio::test]
+async fn list_versions_soft_deleted_subject_with_deleted_returns_versions() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("sdel-ver-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V2).await;
+    common::api::delete_subject(&client, &base, &subject).await;
+
+    // Without deleted → 40401 (soft-deleted subject).
+    let resp = client
+        .get(format!("{base}/subjects/{subject}/versions"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    // With deleted=true → returns soft-deleted versions.
+    let resp = client
+        .get(format!("{base}/subjects/{subject}/versions?deleted=true"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let versions: Vec<i32> = resp.json().await.unwrap();
+    assert_eq!(versions, vec![1, 2]);
 }

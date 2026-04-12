@@ -12,9 +12,15 @@ use crate::error::KoraError;
 use crate::schema::SchemaFormat;
 use crate::storage::{references, schemas};
 
-/// Query parameters for cross-reference endpoints (pagination only).
+/// Query parameters for cross-reference endpoints.
 #[derive(Debug, Deserialize)]
 pub struct CrossRefParams {
+    /// When true, include soft-deleted subjects/versions in results.
+    #[serde(default)]
+    pub deleted: bool,
+    /// Filter results to a specific subject name.
+    #[serde(default)]
+    pub subject: Option<String>,
     /// Pagination offset (default 0).
     #[serde(default)]
     pub offset: i64,
@@ -98,7 +104,15 @@ pub async fn get_subjects_by_schema_id(
     if !schemas::schema_exists(&pool, id).await? {
         return Err(KoraError::SchemaNotFound);
     }
-    let subjects = schemas::find_subjects_by_schema_id(&pool, id, params.offset.max(0), params.limit).await?;
+    let subjects = schemas::find_subjects_by_schema_id(
+        &pool,
+        id,
+        params.deleted,
+        params.subject.as_deref(),
+        params.offset.max(0),
+        params.limit,
+    )
+    .await?;
     Ok(Json(subjects))
 }
 
@@ -118,7 +132,15 @@ pub async fn get_versions_by_schema_id(
     if !schemas::schema_exists(&pool, id).await? {
         return Err(KoraError::SchemaNotFound);
     }
-    let versions = schemas::find_versions_by_schema_id(&pool, id, params.offset.max(0), params.limit).await?;
+    let versions = schemas::find_versions_by_schema_id(
+        &pool,
+        id,
+        params.deleted,
+        params.subject.as_deref(),
+        params.offset.max(0),
+        params.limit,
+    )
+    .await?;
     Ok(Json(versions))
 }
 

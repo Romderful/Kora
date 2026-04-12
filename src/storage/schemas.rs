@@ -12,8 +12,10 @@ pub struct NewSchema<'a> {
     pub schema_text: &'a str,
     /// Canonical form used for deduplication.
     pub canonical_form: &'a str,
-    /// Fingerprint of the canonical form.
+    /// Fingerprint of the canonical form (for normalized dedup).
     pub fingerprint: &'a str,
+    /// Fingerprint of the raw schema text (for non-normalized dedup).
+    pub raw_fingerprint: &'a str,
 }
 
 /// A subject-version pair, returned by schema ID cross-reference lookups.
@@ -36,9 +38,16 @@ pub struct SchemaVersion {
     pub version: i32,
     /// Raw schema text.
     pub schema: String,
-    /// Schema format (e.g. "AVRO").
-    #[serde(rename = "schemaType")]
+    /// Schema format — omitted for AVRO (Confluent default behavior).
+    #[serde(rename = "schemaType", skip_serializing_if = "is_avro")]
     pub schema_type: String,
+    /// Schema references (Protobuf imports, JSON Schema `$ref`, etc.).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<crate::types::SchemaReference>,
+}
+
+fn is_avro(s: &str) -> bool {
+    s == "AVRO"
 }
 
 // -- Queries --
@@ -59,6 +68,7 @@ pub async fn register_schema_atomically(
     subject_name: &str,
     schema: &NewSchema<'_>,
     refs: &[crate::types::SchemaReference],
+    normalize: bool,
 ) -> Result<(i64, bool), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
@@ -80,13 +90,24 @@ pub async fn register_schema_atomically(
         .await?;
 
     // Idempotency: return existing ID if same fingerprint already registered.
-    let existing = sqlx::query_scalar::<_, i64>(
-        "SELECT id FROM schemas WHERE subject_id = $1 AND fingerprint = $2 AND deleted = false",
-    )
-    .bind(subject_id)
-    .bind(schema.fingerprint)
-    .fetch_optional(&mut *tx)
-    .await?;
+    // When normalize=true, match on canonical fingerprint; otherwise on raw text fingerprint.
+    let existing = if normalize {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM schemas WHERE subject_id = $1 AND fingerprint = $2 AND deleted = false",
+        )
+        .bind(subject_id)
+        .bind(schema.fingerprint)
+        .fetch_optional(&mut *tx)
+        .await?
+    } else {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM schemas WHERE subject_id = $1 AND raw_fingerprint = $2 AND deleted = false",
+        )
+        .bind(subject_id)
+        .bind(schema.raw_fingerprint)
+        .fetch_optional(&mut *tx)
+        .await?
+    };
 
     if let Some(id) = existing {
         tx.commit().await?;
@@ -94,8 +115,8 @@ pub async fn register_schema_atomically(
     }
 
     let id = sqlx::query_scalar::<_, i64>(
-        r"INSERT INTO schemas (subject_id, version, schema_type, schema_text, canonical_form, fingerprint)
-           VALUES ($1, COALESCE((SELECT MAX(version) FROM schemas WHERE subject_id = $1), 0) + 1, $2, $3, $4, $5)
+        r"INSERT INTO schemas (subject_id, version, schema_type, schema_text, canonical_form, fingerprint, raw_fingerprint)
+           VALUES ($1, COALESCE((SELECT MAX(version) FROM schemas WHERE subject_id = $1), 0) + 1, $2, $3, $4, $5, $6)
            RETURNING id",
     )
     .bind(subject_id)
@@ -103,6 +124,7 @@ pub async fn register_schema_atomically(
     .bind(schema.schema_text)
     .bind(schema.canonical_form)
     .bind(schema.fingerprint)
+    .bind(schema.raw_fingerprint)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -125,6 +147,8 @@ pub async fn register_schema_atomically(
 
 /// Find a schema by subject name and version number.
 ///
+/// When `include_deleted` is true, soft-deleted versions are included in the lookup.
+///
 /// # Errors
 ///
 /// Returns a database error on connection failure.
@@ -132,20 +156,29 @@ pub async fn find_schema_by_subject_version(
     pool: &PgPool,
     subject: &str,
     version: i32,
+    include_deleted: bool,
 ) -> Result<Option<SchemaVersion>, sqlx::Error> {
-    sqlx::query(
+    let query = if include_deleted {
         r"SELECT s.id, sub.name as subject, s.version, s.schema_type, s.schema_text
            FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
-           WHERE sub.name = $1 AND s.version = $2 AND s.deleted = false",
-    )
-    .bind(subject)
-    .bind(version)
-    .fetch_optional(pool)
-    .await
-    .map(|opt| opt.as_ref().map(row_to_schema_version))
+           WHERE sub.name = $1 AND s.version = $2"
+    } else {
+        r"SELECT s.id, sub.name as subject, s.version, s.schema_type, s.schema_text
+           FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+           WHERE sub.name = $1 AND s.version = $2 AND s.deleted = false"
+    };
+    sqlx::query(query)
+        .bind(subject)
+        .bind(version)
+        .fetch_optional(pool)
+        .await
+        .map(|opt| opt.as_ref().map(row_to_schema_version))
 }
 
 /// Find the latest schema version for a subject.
+///
+/// When `include_deleted` is true, soft-deleted versions are considered when
+/// finding the latest version.
 ///
 /// # Errors
 ///
@@ -153,23 +186,30 @@ pub async fn find_schema_by_subject_version(
 pub async fn find_latest_schema_by_subject(
     pool: &PgPool,
     subject: &str,
+    include_deleted: bool,
 ) -> Result<Option<SchemaVersion>, sqlx::Error> {
-    sqlx::query(
+    let query = if include_deleted {
+        r"SELECT s.id, sub.name as subject, s.version, s.schema_type, s.schema_text
+           FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+           WHERE sub.name = $1
+           ORDER BY s.version DESC LIMIT 1"
+    } else {
         r"SELECT s.id, sub.name as subject, s.version, s.schema_type, s.schema_text
            FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
            WHERE sub.name = $1 AND s.deleted = false
-           ORDER BY s.version DESC LIMIT 1",
-    )
-    .bind(subject)
-    .fetch_optional(pool)
-    .await
-    .map(|opt| opt.as_ref().map(row_to_schema_version))
+           ORDER BY s.version DESC LIMIT 1"
+    };
+    sqlx::query(query)
+        .bind(subject)
+        .fetch_optional(pool)
+        .await
+        .map(|opt| opt.as_ref().map(row_to_schema_version))
 }
 
 /// Find a schema by subject ID and fingerprint (for check-if-registered).
 ///
-/// Returns the full schema version details, unlike
-/// `find_schema_id_by_subject_id_and_fingerprint` which returns only the ID.
+/// When `normalize` is true, matches on canonical fingerprint; otherwise on raw fingerprint.
+/// When `include_deleted` is true, soft-deleted schemas are included in the lookup.
 ///
 /// # Errors
 ///
@@ -178,17 +218,33 @@ pub async fn find_schema_by_subject_id_and_fingerprint(
     pool: &PgPool,
     subject_id: i64,
     fingerprint: &str,
+    normalize: bool,
+    include_deleted: bool,
 ) -> Result<Option<SchemaVersion>, sqlx::Error> {
-    sqlx::query(
-        r"SELECT s.id, sub.name as subject, s.version, s.schema_type, s.schema_text
-           FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
-           WHERE s.subject_id = $1 AND s.fingerprint = $2 AND s.deleted = false",
-    )
-    .bind(subject_id)
-    .bind(fingerprint)
-    .fetch_optional(pool)
-    .await
-    .map(|opt| opt.as_ref().map(row_to_schema_version))
+    let query = match (normalize, include_deleted) {
+        (true, true) =>
+            r"SELECT s.id, sub.name as subject, s.version, s.schema_type, s.schema_text
+               FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+               WHERE s.subject_id = $1 AND s.fingerprint = $2",
+        (true, false) =>
+            r"SELECT s.id, sub.name as subject, s.version, s.schema_type, s.schema_text
+               FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+               WHERE s.subject_id = $1 AND s.fingerprint = $2 AND s.deleted = false",
+        (false, true) =>
+            r"SELECT s.id, sub.name as subject, s.version, s.schema_type, s.schema_text
+               FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+               WHERE s.subject_id = $1 AND s.raw_fingerprint = $2",
+        (false, false) =>
+            r"SELECT s.id, sub.name as subject, s.version, s.schema_type, s.schema_text
+               FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+               WHERE s.subject_id = $1 AND s.raw_fingerprint = $2 AND s.deleted = false",
+    };
+    sqlx::query(query)
+        .bind(subject_id)
+        .bind(fingerprint)
+        .fetch_optional(pool)
+        .await
+        .map(|opt| opt.as_ref().map(row_to_schema_version))
 }
 
 /// Soft-delete the latest schema version for a subject. Returns the version number if found.
@@ -256,9 +312,11 @@ pub async fn hard_delete_schema_version(
 
 /// List version numbers for a subject, sorted ascending, with pagination.
 ///
-/// When `include_deleted` is false, returns only active versions.
-/// When true, returns all versions (active + soft-deleted).
-/// `offset` defaults to 0, `limit` of -1 means unlimited.
+/// - `include_deleted`: when true, include soft-deleted versions in results.
+/// - `deleted_only`: when true, return ONLY soft-deleted versions (takes precedence).
+/// - `deleted_as_negative`: when true (requires `include_deleted`), soft-deleted
+///   versions appear as negative numbers (e.g., version 2 deleted → -2).
+/// - `offset` defaults to 0, `limit` of -1 means unlimited.
 ///
 /// # Errors
 ///
@@ -267,13 +325,89 @@ pub async fn list_schema_versions(
     pool: &PgPool,
     subject: &str,
     include_deleted: bool,
+    deleted_only: bool,
+    deleted_as_negative: bool,
     offset: i64,
     limit: i64,
 ) -> Result<Vec<i32>, sqlx::Error> {
-    if limit >= 0 {
-        sqlx::query_scalar::<_, i32>(
+    if deleted_only && deleted_as_negative {
+        // All results are deleted → return as negative numbers.
+        if limit >= 0 {
+            sqlx::query_scalar(
+                r"SELECT -s.version as version FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+                   WHERE sub.name = $1 AND s.deleted = true
+                   ORDER BY s.version OFFSET $2 LIMIT $3",
+            )
+            .bind(subject)
+            .bind(offset)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
+        } else {
+            sqlx::query_scalar(
+                r"SELECT -s.version as version FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+                   WHERE sub.name = $1 AND s.deleted = true
+                   ORDER BY s.version OFFSET $2",
+            )
+            .bind(subject)
+            .bind(offset)
+            .fetch_all(pool)
+            .await
+        }
+    } else if deleted_only {
+        if limit >= 0 {
+            sqlx::query_scalar(
+                r"SELECT s.version FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+                   WHERE sub.name = $1 AND s.deleted = true
+                   ORDER BY s.version OFFSET $2 LIMIT $3",
+            )
+            .bind(subject)
+            .bind(offset)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
+        } else {
+            sqlx::query_scalar(
+                r"SELECT s.version FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+                   WHERE sub.name = $1 AND s.deleted = true
+                   ORDER BY s.version OFFSET $2",
+            )
+            .bind(subject)
+            .bind(offset)
+            .fetch_all(pool)
+            .await
+        }
+    } else if deleted_as_negative && include_deleted {
+        // Soft-deleted versions appear as negative numbers, ordered by absolute value.
+        if limit >= 0 {
+            sqlx::query_scalar(
+                r"SELECT CASE WHEN s.deleted THEN -s.version ELSE s.version END as version
+                   FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+                   WHERE sub.name = $1
+                   ORDER BY abs(s.version) OFFSET $2 LIMIT $3",
+            )
+            .bind(subject)
+            .bind(offset)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
+        } else {
+            sqlx::query_scalar(
+                r"SELECT CASE WHEN s.deleted THEN -s.version ELSE s.version END as version
+                   FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+                   WHERE sub.name = $1
+                   ORDER BY abs(s.version) OFFSET $2",
+            )
+            .bind(subject)
+            .bind(offset)
+            .fetch_all(pool)
+            .await
+        }
+    } else if limit >= 0 {
+        sqlx::query_scalar(
             r"SELECT s.version FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
-               WHERE sub.name = $1 AND (s.deleted = false OR $2) ORDER BY s.version OFFSET $3 LIMIT $4",
+               WHERE sub.name = $1 AND (s.deleted = false OR $2)
+               ORDER BY s.version OFFSET $3 LIMIT $4",
         )
         .bind(subject)
         .bind(include_deleted)
@@ -282,9 +416,10 @@ pub async fn list_schema_versions(
         .fetch_all(pool)
         .await
     } else {
-        sqlx::query_scalar::<_, i32>(
+        sqlx::query_scalar(
             r"SELECT s.version FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
-               WHERE sub.name = $1 AND (s.deleted = false OR $2) ORDER BY s.version OFFSET $3",
+               WHERE sub.name = $1 AND (s.deleted = false OR $2)
+               ORDER BY s.version OFFSET $3",
         )
         .bind(subject)
         .bind(include_deleted)
@@ -392,42 +527,77 @@ pub async fn schema_exists(pool: &PgPool, id: i64) -> Result<bool, sqlx::Error> 
 
 /// Find all subjects that use a given schema ID, with pagination.
 ///
+/// - `include_deleted`: when true, include soft-deleted subjects/versions.
+/// - `subject_filter`: when `Some`, filter to a specific subject name.
+///
 /// # Errors
 ///
 /// Returns a database error on connection failure.
 pub async fn find_subjects_by_schema_id(
     pool: &PgPool,
     id: i64,
+    include_deleted: bool,
+    subject_filter: Option<&str>,
     offset: i64,
     limit: i64,
 ) -> Result<Vec<String>, sqlx::Error> {
-    if limit >= 0 {
-        sqlx::query_scalar::<_, String>(
-            r"SELECT sub.name
-               FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
-               WHERE s.id = $1 AND s.deleted = false AND sub.deleted = false
-               ORDER BY sub.name OFFSET $2 LIMIT $3",
+    match (subject_filter, limit >= 0) {
+        (Some(filter), true) => sqlx::query_scalar(
+            r"SELECT sub.name FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+               WHERE s.id = $1 AND (s.deleted = false OR $2) AND (sub.deleted = false OR $2)
+                 AND sub.name = $3
+               ORDER BY sub.name OFFSET $4 LIMIT $5",
         )
         .bind(id)
+        .bind(include_deleted)
+        .bind(filter)
         .bind(offset)
         .bind(limit)
         .fetch_all(pool)
-        .await
-    } else {
-        sqlx::query_scalar::<_, String>(
-            r"SELECT sub.name
-               FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
-               WHERE s.id = $1 AND s.deleted = false AND sub.deleted = false
-               ORDER BY sub.name OFFSET $2",
+        .await,
+
+        (Some(filter), false) => sqlx::query_scalar(
+            r"SELECT sub.name FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+               WHERE s.id = $1 AND (s.deleted = false OR $2) AND (sub.deleted = false OR $2)
+                 AND sub.name = $3
+               ORDER BY sub.name OFFSET $4",
         )
         .bind(id)
+        .bind(include_deleted)
+        .bind(filter)
         .bind(offset)
         .fetch_all(pool)
-        .await
+        .await,
+
+        (None, true) => sqlx::query_scalar(
+            r"SELECT sub.name FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+               WHERE s.id = $1 AND (s.deleted = false OR $2) AND (sub.deleted = false OR $2)
+               ORDER BY sub.name OFFSET $3 LIMIT $4",
+        )
+        .bind(id)
+        .bind(include_deleted)
+        .bind(offset)
+        .bind(limit)
+        .fetch_all(pool)
+        .await,
+
+        (None, false) => sqlx::query_scalar(
+            r"SELECT sub.name FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+               WHERE s.id = $1 AND (s.deleted = false OR $2) AND (sub.deleted = false OR $2)
+               ORDER BY sub.name OFFSET $3",
+        )
+        .bind(id)
+        .bind(include_deleted)
+        .bind(offset)
+        .fetch_all(pool)
+        .await,
     }
 }
 
 /// Find all subject-version pairs that use a given schema ID, with pagination.
+///
+/// - `include_deleted`: when true, include soft-deleted subjects/versions.
+/// - `subject_filter`: when `Some`, filter to a specific subject name.
 ///
 /// # Errors
 ///
@@ -435,25 +605,65 @@ pub async fn find_subjects_by_schema_id(
 pub async fn find_versions_by_schema_id(
     pool: &PgPool,
     id: i64,
+    include_deleted: bool,
+    subject_filter: Option<&str>,
     offset: i64,
     limit: i64,
 ) -> Result<Vec<SubjectVersion>, sqlx::Error> {
-    let query = if limit >= 0 {
-        r"SELECT sub.name as subject, s.version
-           FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
-           WHERE s.id = $1 AND s.deleted = false AND sub.deleted = false
-           ORDER BY sub.name, s.version OFFSET $2 LIMIT $3"
-    } else {
-        r"SELECT sub.name as subject, s.version
-           FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
-           WHERE s.id = $1 AND s.deleted = false AND sub.deleted = false
-           ORDER BY sub.name, s.version OFFSET $2"
-    };
+    let rows = match (subject_filter, limit >= 0) {
+        (Some(filter), true) => sqlx::query(
+            r"SELECT sub.name as subject, s.version
+               FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+               WHERE s.id = $1 AND (s.deleted = false OR $2) AND (sub.deleted = false OR $2)
+                 AND sub.name = $3
+               ORDER BY sub.name, s.version OFFSET $4 LIMIT $5",
+        )
+        .bind(id)
+        .bind(include_deleted)
+        .bind(filter)
+        .bind(offset)
+        .bind(limit)
+        .fetch_all(pool)
+        .await?,
 
-    let rows = if limit >= 0 {
-        sqlx::query(query).bind(id).bind(offset).bind(limit).fetch_all(pool).await?
-    } else {
-        sqlx::query(query).bind(id).bind(offset).fetch_all(pool).await?
+        (Some(filter), false) => sqlx::query(
+            r"SELECT sub.name as subject, s.version
+               FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+               WHERE s.id = $1 AND (s.deleted = false OR $2) AND (sub.deleted = false OR $2)
+                 AND sub.name = $3
+               ORDER BY sub.name, s.version OFFSET $4",
+        )
+        .bind(id)
+        .bind(include_deleted)
+        .bind(filter)
+        .bind(offset)
+        .fetch_all(pool)
+        .await?,
+
+        (None, true) => sqlx::query(
+            r"SELECT sub.name as subject, s.version
+               FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+               WHERE s.id = $1 AND (s.deleted = false OR $2) AND (sub.deleted = false OR $2)
+               ORDER BY sub.name, s.version OFFSET $3 LIMIT $4",
+        )
+        .bind(id)
+        .bind(include_deleted)
+        .bind(offset)
+        .bind(limit)
+        .fetch_all(pool)
+        .await?,
+
+        (None, false) => sqlx::query(
+            r"SELECT sub.name as subject, s.version
+               FROM schemas s JOIN subjects sub ON s.subject_id = sub.id
+               WHERE s.id = $1 AND (s.deleted = false OR $2) AND (sub.deleted = false OR $2)
+               ORDER BY sub.name, s.version OFFSET $3",
+        )
+        .bind(id)
+        .bind(include_deleted)
+        .bind(offset)
+        .fetch_all(pool)
+        .await?,
     };
 
     Ok(rows.iter().map(|row| SubjectVersion {
@@ -471,5 +681,6 @@ fn row_to_schema_version(row: &sqlx::postgres::PgRow) -> SchemaVersion {
         version: row.get("version"),
         schema: row.get("schema_text"),
         schema_type: row.get("schema_type"),
+        references: Vec::new(),
     }
 }

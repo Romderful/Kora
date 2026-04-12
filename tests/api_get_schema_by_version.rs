@@ -23,7 +23,7 @@ async fn get_schema_by_version_specific_succeeds() {
     assert_eq!(body["id"], id1);
     assert_eq!(body["version"], 1);
     assert_eq!(body["schema"], common::AVRO_SCHEMA_V1);
-    assert_eq!(body["schemaType"], "AVRO");
+    assert!(body.get("schemaType").is_none(), "schemaType should be omitted for AVRO");
 }
 
 #[tokio::test]
@@ -145,4 +145,57 @@ async fn get_schema_by_version_all_deleted_latest_returns_40402() {
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error_code"], 40402);
+}
+
+#[tokio::test]
+async fn get_schema_by_version_deleted_returns_soft_deleted() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("ver-del-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V2).await;
+    common::api::delete_version(&client, &base, &subject, "2").await;
+
+    // Without deleted → 404.
+    let resp = common::api::get_schema_by_version(&client, &base, &subject, "2").await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    // With deleted=true → returns the soft-deleted version.
+    let resp = client
+        .get(format!("{base}/subjects/{subject}/versions/2?deleted=true"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK, "deleted=true should return soft-deleted version");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["version"], 2);
+}
+
+#[tokio::test]
+async fn get_schema_by_version_latest_with_deleted_returns_soft_deleted() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("latest-del-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V2).await;
+    // Soft-delete version 2 (the latest).
+    common::api::delete_version(&client, &base, &subject, "2").await;
+
+    // latest without deleted → returns version 1 (the latest active).
+    let resp = common::api::get_schema_by_version(&client, &base, &subject, "latest").await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["version"], 1);
+
+    // latest with deleted=true → returns version 2 (soft-deleted but highest).
+    let resp = client
+        .get(format!("{base}/subjects/{subject}/versions/latest?deleted=true"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK, "latest?deleted=true should consider soft-deleted versions");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["version"], 2);
 }

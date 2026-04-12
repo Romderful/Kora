@@ -1,6 +1,6 @@
 # Story 4.3: Confluent API Parity — List & Lookup Params
 
-Status: ready-for-dev
+Status: done
 
 **Depends on:** Story 4.2 (pagination infrastructure, error codes)
 
@@ -87,42 +87,42 @@ so that every Confluent client library query works identically against Kora.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: `subjectPrefix` + `deletedOnly` on list subjects (AC: 1)
-  - [ ] Extend `ListParams` into `ListSubjectsParams { deleted: bool, deleted_only: bool, lookup_deleted_subject: bool, subject_prefix: String, offset: i64, limit: i64 }` with serde renames (`deletedOnly`, `lookupDeletedSubject`, `subjectPrefix`)
-  - [ ] `lookupDeletedSubject`: accept-and-ignore (Confluent OSS has it, overlaps with `deleted`/`deletedOnly`)
-  - [ ] Default `subject_prefix` to `":*:"` via custom serde default
-  - [ ] Extend `storage::list_subjects` to accept prefix + deleted_only
-  - [ ] SQL: add `WHERE name LIKE $prefix%` (skip when prefix is `:*:`), add `WHERE deleted = true` for deletedOnly
-  - [ ] Tests: prefix filtering, deletedOnly, default behavior
+- [x] Task 1: `subjectPrefix` + `deletedOnly` on list subjects (AC: 1)
+  - [x] Extend `ListParams` into `ListSubjectsParams { deleted: bool, deleted_only: bool, lookup_deleted_subject: bool, subject_prefix: String, offset: i64, limit: i64 }` with serde renames (`deletedOnly`, `lookupDeletedSubject`, `subjectPrefix`)
+  - [x] `lookupDeletedSubject`: accept-and-ignore (Confluent OSS has it, overlaps with `deleted`/`deletedOnly`)
+  - [x] Default `subject_prefix` to `":*:"` via custom serde default
+  - [x] Extend `storage::list_subjects` to accept prefix + deleted_only
+  - [x] SQL: add `WHERE name LIKE $prefix%` (skip when prefix is `:*:`), add `WHERE deleted = true` for deletedOnly
+  - [x] Tests: prefix filtering, deletedOnly, default behavior
 
-- [ ] Task 2: `deletedOnly` + `deletedAsNegative` on list versions (AC: 2)
-  - [ ] Extend `ListParams` into `ListVersionsParams { deleted: bool, deleted_only: bool, deleted_as_negative: bool, offset: i64, limit: i64 }` with serde renames
-  - [ ] Extend `storage::list_schema_versions` to support `deleted_only` and `deleted_as_negative`
-  - [ ] For `deletedAsNegative`: SQL returns `-version` for deleted rows, `version` for active rows, ordered by `abs(version)`
-  - [ ] Tests: deletedOnly, deletedAsNegative with mix of active/deleted versions
+- [x] Task 2: `deletedOnly` + `deletedAsNegative` on list versions (AC: 2)
+  - [x] Extend `ListParams` into `ListVersionsParams { deleted: bool, deleted_only: bool, deleted_as_negative: bool, offset: i64, limit: i64 }` with serde renames
+  - [x] Extend `storage::list_schema_versions` to support `deleted_only` and `deleted_as_negative`
+  - [x] For `deletedAsNegative`: SQL returns `-version` for deleted rows, `version` for active rows, ordered by `abs(version)`
+  - [x] Tests: deletedOnly, deletedAsNegative with mix of active/deleted versions
 
-- [ ] Task 3: `normalize` on register + check (AC: 3, 4)
-  - [ ] Add `normalize: bool` query param to `register_schema` and `check_schema` handlers
-  - [ ] When `normalize=true` on register: compare fingerprints using canonical_form (already stored) instead of raw schema text
-  - [ ] When `normalize=true` on check: same — use canonical form for lookup
-  - [ ] Tests: register two formatting-different schemas with normalize=true → same ID; check with normalize=true finds match
+- [x] Task 3: `normalize` on register + check (AC: 3, 4)
+  - [x] Add `normalize: bool` query param to `register_schema` and `check_schema` handlers
+  - [x] When `normalize=true` on register: compare fingerprints using canonical_form (already stored) instead of raw schema text
+  - [x] When `normalize=true` on check: same — use canonical form for lookup
+  - [x] Tests: register two formatting-different schemas with normalize=true → same ID; check with normalize=true finds match
 
-- [ ] Task 4: `deleted` param on check_schema (AC: 4)
-  - [ ] Add `deleted: bool` to check_schema handler query params
-  - [ ] When `deleted=true`: include soft-deleted schemas in lookup
-  - [ ] Modify `storage::find_schema_by_subject_id_and_fingerprint` to accept `include_deleted`
-  - [ ] Tests: check against soft-deleted schema with deleted=true returns match
+- [x] Task 4: `deleted` param on check_schema (AC: 4)
+  - [x] Add `deleted: bool` to check_schema handler query params
+  - [x] When `deleted=true`: include soft-deleted schemas in lookup
+  - [x] Modify `storage::find_schema_by_subject_id_and_fingerprint` to accept `include_deleted`
+  - [x] Tests: check against soft-deleted schema with deleted=true returns match
 
-- [ ] Task 5: `deleted` + `subject` params on cross-references (AC: 5)
-  - [ ] Add `deleted: bool` and `subject: Option<String>` to `get_subjects_by_schema_id` and `get_versions_by_schema_id` handlers
-  - [ ] `subject` param filters results to a specific subject name (Confluent uses this to scope cross-reference lookups)
-  - [ ] Modify `storage::find_subjects_by_schema_id` and `find_versions_by_schema_id` to accept `include_deleted` and optional `subject` filter
-  - [ ] Tests: cross-refs include soft-deleted when deleted=true; subject filter narrows results
+- [x] Task 5: `deleted` + `subject` params on cross-references (AC: 5)
+  - [x] Add `deleted: bool` and `subject: Option<String>` to `get_subjects_by_schema_id` and `get_versions_by_schema_id` handlers
+  - [x] `subject` param filters results to a specific subject name (Confluent uses this to scope cross-reference lookups)
+  - [x] Modify `storage::find_subjects_by_schema_id` and `find_versions_by_schema_id` to accept `include_deleted` and optional `subject` filter
+  - [x] Tests: cross-refs include soft-deleted when deleted=true; subject filter narrows results
 
-- [ ] Task 6: `deleted` param on get-by-version (AC: 6)
-  - [ ] Add `deleted: bool` query param to `get_schema_by_version` handler
-  - [ ] Modify `storage::find_schema_by_subject_version` to accept `include_deleted`
-  - [ ] Tests: get soft-deleted version with deleted=true → 200; without → 404
+- [x] Task 6: `deleted` param on get-by-version (AC: 6)
+  - [x] Add `deleted: bool` query param to `get_schema_by_version` handler
+  - [x] Modify `storage::find_schema_by_subject_version` to accept `include_deleted`
+  - [x] Tests: get soft-deleted version with deleted=true → 200; without → 404
 
 ## Dev Notes
 
@@ -193,8 +193,42 @@ OFFSET $2
 
 ### Agent Model Used
 
+Claude Opus 4.6 (1M context)
+
 ### Completion Notes List
+
+- **Task 1**: Created `ListSubjectsParams` with `subjectPrefix`, `deletedOnly`, `lookupDeletedSubject` (accept-and-ignore). Updated `storage::list_subjects` to support prefix LIKE filtering and deleted_only mode. Default prefix `:*:` and empty string both return all subjects. 6 tests.
+- **Task 2**: Created `ListVersionsParams` with `deletedOnly` and `deletedAsNegative`. Updated `storage::list_schema_versions` with CASE WHEN SQL for negative version numbers and abs() ordering. 2 tests.
+- **Task 3**: Added `RegisterParams` (normalize) and `CheckParams` (normalize + deleted) query param structs. Implemented full Confluent normalize behavior: `normalize=true` compares canonical fingerprint, `normalize=false` (default) compares raw text fingerprint (SHA-256). Added `raw_fingerprint` column to schemas table, `normalize` column to config table. Config-driven normalize: handler resolves `params.normalize OR get_effective_normalize(subject)` (subject-level then global fallback). 3 tests (normalize dedup, config-driven normalize, without-normalize creates separate versions).
+- **Task 4**: Extended `check_schema` handler with `deleted` param. Added `find_subject_id_by_name_ext` to storage for deleted-aware subject lookup. Extended `find_schema_by_subject_id_and_fingerprint` with `include_deleted`. 1 test.
+- **Task 5**: Extended `CrossRefParams` with `deleted` and `subject` fields. Updated `find_subjects_by_schema_id` and `find_versions_by_schema_id` storage functions with include_deleted and subject_filter params. 4 tests.
+- **Task 6**: Added `GetVersionParams` with `deleted` field. Extended `find_schema_by_subject_version` with `include_deleted`. 1 test.
 
 ### Change Log
 
+- 2026-04-12: Implemented all 6 tasks for Confluent API parity query parameters (AC1–AC6). Distributed integration tests across existing test modules. Removed dead ListParams struct.
+- 2026-04-12: Post-review round 1 — propagated `deleted` to `find_latest_schema_by_subject` for `latest?deleted=true`; fixed `deletedOnly+deletedAsNegative` to return negative versions.
+- 2026-04-12: Implemented full `normalize=false` raw text comparison (Confluent parity). Added `raw_fingerprint TEXT NOT NULL` column + indexes. Added `normalize BOOLEAN` to config table with `get_effective_normalize` (subject then global fallback). Config endpoint accepts/persists/returns `normalize`.
+- 2026-04-12: Post-review rounds 2-4 — added indexes on `(subject_id, fingerprint)` and `(subject_id, raw_fingerprint)`; `list_versions` works on soft-deleted subjects with `deleted=true`; error propagation on `get_effective_normalize`; LIKE metacharacter escaping (`%`, `_`, `\`); `get_schema_by_version` correct error for soft-deleted subjects; partial unique index for global config NULL row; `SchemaVersion` omits `schemaType` for AVRO and includes `references`; PUT/DELETE config return `normalize`; lazy exists_check on `get_schema_by_version` happy path. Renamed `PermanentParam` → `PermanentParams`, `DefaultToGlobalParam` → `DefaultToGlobalParams` for consistency.
+- 2026-04-12: Refactored schema parsers — parsers now return `(canonical_form, fingerprint)` tuple, `parse()` constructs the full `ParsedSchema` with `raw_fingerprint`. Eliminates incomplete intermediate state. Renamed `with_references` → `load_references`. Fixed flaky test timing in justfile (`db_ready` check after `pg_isready`).
+- 2026-04-12: Unified storage functions — removed dead `find_subject_id_by_name` (active-only), renamed `_with_deleted` variant to `find_subject_id_by_name(pool, name, include_deleted)`. Merged `subject_exists` + `subject_exists_any` into `subject_exists(pool, name, include_deleted)`. 146 tests pass, clippy clean.
+
 ### File List
+
+- migrations/001_initial_schema.sql (modified) — added `raw_fingerprint TEXT NOT NULL DEFAULT ''` to schemas, `normalize BOOLEAN NOT NULL DEFAULT false` to config, indexes on `(subject_id, fingerprint)` and `(subject_id, raw_fingerprint)`, partial unique index for global config NULL row
+- src/schema/mod.rs (modified) — `ParsedSchema` with `raw_fingerprint`; `parse()` constructs full struct from parser tuple + SHA-256 of raw text
+- src/schema/avro.rs (modified) — returns `(canonical_form, fingerprint)` tuple instead of `ParsedSchema`
+- src/schema/json_schema.rs (modified) — same
+- src/schema/protobuf.rs (modified) — same
+- src/api/subjects.rs (modified) — new param structs: ListSubjectsParams, ListVersionsParams, RegisterParams, CheckParams, GetVersionParams; normalize resolution via config; `load_references` helper; lazy exists_check; renamed PermanentParams
+- justfile (modified) — added `db_ready` check (psql SELECT 1) after `pg_isready` to fix flaky test timing
+- src/api/schemas.rs (modified) — extended CrossRefParams with deleted + subject
+- src/api/compatibility.rs (modified) — CompatibilityRequest accepts normalize; GET/PUT/DELETE return normalize; renamed DefaultToGlobalParams
+- src/storage/schemas.rs (modified) — `raw_fingerprint` in NewSchema + register; normalize-aware dedup; SchemaVersion with references + skip schemaType for AVRO; all query functions extended with include_deleted/subject_filter/normalize
+- src/storage/subjects.rs (modified) — list_subjects with prefix (LIKE escaped) + deleted_only; find_subject_id_by_name_ext
+- src/storage/compatibility.rs (modified) — get_global_normalize, get_subject_normalize, get_effective_normalize; set functions accept normalize; delete functions return previous normalize
+- tests/api_list_subjects.rs (modified) — +9 tests: subjectPrefix, deletedOnly, deletedAsNegative, combined, lookupDeletedSubject, soft-deleted subject with deleted=true
+- tests/api_register_schema.rs (modified) — +4 tests: normalize dedup, config-driven normalize, JSON reorder with/without normalize
+- tests/api_check_schema.rs (modified) — +3 tests: normalize match, without-normalize miss, deleted finds soft-deleted
+- tests/api_schema_cross_refs.rs (modified) — +4 tests: deleted + subject filter on subjects and versions
+- tests/api_get_schema_by_version.rs (modified) — +2 tests: deleted returns soft-deleted, latest?deleted=true; updated schemaType AVRO assertion

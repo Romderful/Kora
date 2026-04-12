@@ -4,6 +4,8 @@ pub mod avro;
 pub mod json_schema;
 pub mod protobuf;
 
+use sha2::{Digest, Sha256};
+
 use crate::error::KoraError;
 
 // -- Types --
@@ -26,6 +28,8 @@ pub struct ParsedSchema {
     pub canonical_form: String,
     /// Hex-encoded fingerprint of the canonical form (Rabin for Avro, SHA-256 for JSON/Protobuf).
     pub fingerprint: String,
+    /// Hex-encoded SHA-256 fingerprint of the raw schema text (for non-normalized dedup).
+    pub raw_fingerprint: String,
 }
 
 // -- Functions --
@@ -63,13 +67,27 @@ impl SchemaFormat {
 
 /// Parse and validate a raw schema string.
 ///
+/// Each format parser computes the canonical form and its format-specific fingerprint
+/// (Rabin for Avro, SHA-256 for JSON/Protobuf). This function adds the raw fingerprint
+/// (SHA-256 of the unmodified input text) used for non-normalized dedup.
+///
 /// # Errors
 ///
 /// Returns `KoraError::InvalidSchema` if the schema is malformed.
 pub fn parse(format: SchemaFormat, raw: &str) -> Result<ParsedSchema, KoraError> {
-    match format {
+    let (canonical_form, fingerprint) = match format {
         SchemaFormat::Avro => avro::parse(raw),
         SchemaFormat::Json => json_schema::parse(raw),
         SchemaFormat::Protobuf => protobuf::parse(raw),
-    }
+    }?;
+
+    let mut hasher = Sha256::new();
+    hasher.update(raw.as_bytes());
+    let raw_fingerprint = format!("{:x}", hasher.finalize());
+
+    Ok(ParsedSchema {
+        canonical_form,
+        fingerprint,
+        raw_fingerprint,
+    })
 }

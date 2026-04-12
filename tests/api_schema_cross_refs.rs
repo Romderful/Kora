@@ -156,3 +156,105 @@ async fn get_versions_by_schema_id_excludes_soft_deleted_subject() {
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
     assert!(body.is_empty());
 }
+
+#[tokio::test]
+async fn get_subjects_by_schema_id_with_deleted_includes_soft_deleted() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let subject = format!("xref-sdel-{}", uuid::Uuid::new_v4());
+
+    let id = common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::delete_subject(&client, &base, &subject).await;
+
+    let resp = common::api::get_subjects_by_schema_id(&client, &base, id).await;
+    let subjects: Vec<String> = resp.json().await.unwrap();
+    assert!(subjects.is_empty());
+
+    let resp = client
+        .get(format!("{base}/schemas/ids/{id}/subjects?deleted=true"))
+        .send()
+        .await
+        .unwrap();
+    let subjects: Vec<String> = resp.json().await.unwrap();
+    assert_eq!(subjects, vec![subject], "deleted=true should include soft-deleted subject");
+}
+
+#[tokio::test]
+async fn get_subjects_by_schema_id_with_subject_filter() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let subject = format!("xref-filt-{}", uuid::Uuid::new_v4());
+    let other = format!("xref-other-{}", uuid::Uuid::new_v4());
+
+    let id = common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+
+    let resp = client
+        .get(format!("{base}/schemas/ids/{id}/subjects?subject={subject}"))
+        .send()
+        .await
+        .unwrap();
+    let subjects: Vec<String> = resp.json().await.unwrap();
+    assert_eq!(subjects, vec![subject.clone()]);
+
+    let resp = client
+        .get(format!("{base}/schemas/ids/{id}/subjects?subject={other}"))
+        .send()
+        .await
+        .unwrap();
+    let subjects: Vec<String> = resp.json().await.unwrap();
+    assert!(subjects.is_empty(), "non-matching subject filter should return empty");
+}
+
+#[tokio::test]
+async fn get_versions_by_schema_id_with_deleted_includes_soft_deleted() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let subject = format!("xref-ver-del-{}", uuid::Uuid::new_v4());
+    let id = common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::delete_subject(&client, &base, &subject).await;
+
+    let resp = common::api::get_versions_by_schema_id(&client, &base, id).await;
+    let versions: Vec<serde_json::Value> = resp.json().await.unwrap();
+    assert!(versions.is_empty());
+
+    let resp = client
+        .get(format!("{base}/schemas/ids/{id}/versions?deleted=true"))
+        .send()
+        .await
+        .unwrap();
+    let versions: Vec<serde_json::Value> = resp.json().await.unwrap();
+    assert_eq!(versions.len(), 1, "deleted=true should include soft-deleted versions");
+    assert_eq!(versions[0]["subject"], subject);
+    assert_eq!(versions[0]["version"], 1);
+}
+
+#[tokio::test]
+async fn get_versions_by_schema_id_with_subject_filter() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let subject = format!("xref-vfilt-{}", uuid::Uuid::new_v4());
+    let other = format!("xref-vother-{}", uuid::Uuid::new_v4());
+
+    let id = common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+
+    let resp = client
+        .get(format!("{base}/schemas/ids/{id}/versions?subject={subject}"))
+        .send()
+        .await
+        .unwrap();
+    let versions: Vec<serde_json::Value> = resp.json().await.unwrap();
+    assert_eq!(versions.len(), 1);
+    assert_eq!(versions[0]["subject"], subject);
+
+    let resp = client
+        .get(format!("{base}/schemas/ids/{id}/versions?subject={other}"))
+        .send()
+        .await
+        .unwrap();
+    let versions: Vec<serde_json::Value> = resp.json().await.unwrap();
+    assert!(versions.is_empty(), "non-matching subject filter should return empty");
+}

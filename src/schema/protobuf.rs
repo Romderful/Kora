@@ -3,11 +3,10 @@
 use sha2::{Digest, Sha256};
 
 use crate::error::KoraError;
-use crate::schema::ParsedSchema;
 
 // -- Functions --
 
-/// Parse a Protobuf `.proto` definition and compute its canonical form and fingerprint.
+/// Parse a Protobuf `.proto` definition and compute its canonical form and SHA-256 fingerprint.
 ///
 /// Validates the input by parsing it with `protox_parse`. Computes a canonical
 /// form by normalizing whitespace, and a SHA-256 fingerprint of the canonical form.
@@ -15,7 +14,7 @@ use crate::schema::ParsedSchema;
 /// # Errors
 ///
 /// Returns `KoraError::InvalidSchema` when the input is not valid Protobuf syntax.
-pub fn parse(raw: &str) -> Result<ParsedSchema, KoraError> {
+pub fn parse(raw: &str) -> Result<(String, String), KoraError> {
     protox_parse::parse("schema.proto", raw)
         .map_err(|e| KoraError::InvalidSchema(e.to_string()))?;
 
@@ -25,10 +24,7 @@ pub fn parse(raw: &str) -> Result<ParsedSchema, KoraError> {
     hasher.update(canonical.as_bytes());
     let fingerprint = format!("{:x}", hasher.finalize());
 
-    Ok(ParsedSchema {
-        canonical_form: canonical,
-        fingerprint,
-    })
+    Ok((canonical, fingerprint))
 }
 
 /// Normalize a proto definition into a canonical form.
