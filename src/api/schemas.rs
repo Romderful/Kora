@@ -46,7 +46,35 @@ pub struct GetSchemaByIdParams {
     pub reference_format: String,
 }
 
-use super::subjects::default_limit;
+/// Query parameters for `GET /schemas` (list all schemas).
+#[derive(Debug, Deserialize)]
+pub struct ListSchemasParams {
+    /// When true, include soft-deleted versions/subjects.
+    #[serde(default)]
+    pub deleted: bool,
+    /// When true, return only the highest version per subject.
+    #[serde(default, rename = "latestOnly")]
+    pub latest_only: bool,
+    /// Subject name prefix filter. Default `:*:` means match all.
+    #[serde(default = "default_subject_prefix", rename = "subjectPrefix")]
+    pub subject_prefix: String,
+    /// Pagination offset (default 0).
+    #[serde(default)]
+    pub offset: i64,
+    /// Pagination limit (-1 = unlimited, default).
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+}
+
+/// Query parameters for `GET /schemas/ids/{id}/schema` (schema text).
+#[derive(Debug, Deserialize)]
+pub struct GetSchemaTextParams {
+    /// Subject context (accept and ignore — future: schema resolution context).
+    #[serde(default)]
+    pub subject: Option<String>,
+}
+
+use super::subjects::{default_limit, default_subject_prefix};
 
 // -- Handlers --
 
@@ -142,6 +170,58 @@ pub async fn get_versions_by_schema_id(
     )
     .await?;
     Ok(Json(versions))
+}
+
+/// List all schemas across all subjects, with optional filtering.
+///
+/// `GET /schemas`
+///
+/// # Errors
+///
+/// Returns `KoraError::BackendDataStore` (500) for database failures.
+pub async fn list_schemas(
+    State(pool): State<PgPool>,
+    Query(params): Query<ListSchemasParams>,
+) -> Result<impl IntoResponse, KoraError> {
+    let prefix = if params.subject_prefix == ":*:" || params.subject_prefix.is_empty() {
+        None
+    } else {
+        Some(params.subject_prefix.as_str())
+    };
+    let mut all = schemas::list_schemas(
+        &pool,
+        params.deleted,
+        params.latest_only,
+        prefix,
+        params.offset.max(0),
+        params.limit,
+    )
+    .await?;
+
+    for sv in &mut all {
+        sv.references = references::find_references_by_schema_id(&pool, sv.id).await?;
+    }
+
+    Ok(Json(all))
+}
+
+/// Retrieve schema text by global ID.
+///
+/// `GET /schemas/ids/{id}/schema`
+///
+/// # Errors
+///
+/// Returns `KoraError::SchemaNotFound` (40403) if no schema exists with the
+/// given ID, or `KoraError::BackendDataStore` (500) for database failures.
+pub async fn get_schema_text_by_id(
+    State(pool): State<PgPool>,
+    Path(id): Path<i64>,
+    Query(_params): Query<GetSchemaTextParams>,
+) -> Result<impl IntoResponse, KoraError> {
+    let (schema_text, _schema_type) = schemas::find_schema_by_id(&pool, id)
+        .await?
+        .ok_or(KoraError::SchemaNotFound)?;
+    Ok(Json(schema_text))
 }
 
 /// List supported schema types.

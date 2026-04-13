@@ -611,6 +611,170 @@ pub async fn list_schema_versions(
     }
 }
 
+/// List schemas across all subjects, with optional filtering and pagination.
+///
+/// - `include_deleted`: when true, include soft-deleted versions/subjects.
+/// - `latest_only`: when true, return only the highest version per subject.
+/// - `prefix`: when `Some`, filter to subjects whose name starts with this prefix.
+/// - `offset` defaults to 0, `limit` of -1 means unlimited.
+///
+/// References are NOT populated — caller must load them separately.
+///
+/// # Errors
+///
+/// Returns a database error on connection failure.
+pub async fn list_schemas(
+    pool: &PgPool,
+    include_deleted: bool,
+    latest_only: bool,
+    prefix: Option<&str>,
+    offset: i64,
+    limit: i64,
+) -> Result<Vec<SchemaVersion>, sqlx::Error> {
+    let like_pattern = prefix.filter(|p| !p.is_empty()).map(|p| {
+        let escaped = p.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        format!("{escaped}%")
+    });
+
+    let rows = if latest_only {
+        list_schemas_latest(pool, include_deleted, like_pattern.as_deref(), offset, limit).await?
+    } else {
+        list_schemas_all_versions(pool, include_deleted, like_pattern.as_deref(), offset, limit).await?
+    };
+
+    Ok(rows.iter().map(row_to_schema_version).collect())
+}
+
+/// List latest version per subject (helper for `DISTINCT ON` variant).
+async fn list_schemas_latest(
+    pool: &PgPool,
+    include_deleted: bool,
+    like_pattern: Option<&str>,
+    offset: i64,
+    limit: i64,
+) -> Result<Vec<sqlx::postgres::PgRow>, sqlx::Error> {
+    match (like_pattern, limit >= 0) {
+        (Some(pat), true) => sqlx::query(
+            r"SELECT DISTINCT ON (sub.name) sub.name AS subject, sc.id, sv.version,
+                     sc.schema_text, sc.schema_type
+               FROM schema_versions sv
+               JOIN subjects sub ON sv.subject_id = sub.id
+               JOIN schema_contents sc ON sv.content_id = sc.id
+               WHERE (sv.deleted = false OR $1) AND (sub.deleted = false OR $1)
+                 AND sub.name LIKE $2 ESCAPE '\'
+               ORDER BY sub.name, sv.version DESC
+               OFFSET $3 LIMIT $4",
+        )
+        .bind(include_deleted).bind(pat).bind(offset).bind(limit)
+        .fetch_all(pool).await,
+
+        (Some(pat), false) => sqlx::query(
+            r"SELECT DISTINCT ON (sub.name) sub.name AS subject, sc.id, sv.version,
+                     sc.schema_text, sc.schema_type
+               FROM schema_versions sv
+               JOIN subjects sub ON sv.subject_id = sub.id
+               JOIN schema_contents sc ON sv.content_id = sc.id
+               WHERE (sv.deleted = false OR $1) AND (sub.deleted = false OR $1)
+                 AND sub.name LIKE $2 ESCAPE '\'
+               ORDER BY sub.name, sv.version DESC
+               OFFSET $3",
+        )
+        .bind(include_deleted).bind(pat).bind(offset)
+        .fetch_all(pool).await,
+
+        (None, true) => sqlx::query(
+            r"SELECT DISTINCT ON (sub.name) sub.name AS subject, sc.id, sv.version,
+                     sc.schema_text, sc.schema_type
+               FROM schema_versions sv
+               JOIN subjects sub ON sv.subject_id = sub.id
+               JOIN schema_contents sc ON sv.content_id = sc.id
+               WHERE (sv.deleted = false OR $1) AND (sub.deleted = false OR $1)
+               ORDER BY sub.name, sv.version DESC
+               OFFSET $2 LIMIT $3",
+        )
+        .bind(include_deleted).bind(offset).bind(limit)
+        .fetch_all(pool).await,
+
+        (None, false) => sqlx::query(
+            r"SELECT DISTINCT ON (sub.name) sub.name AS subject, sc.id, sv.version,
+                     sc.schema_text, sc.schema_type
+               FROM schema_versions sv
+               JOIN subjects sub ON sv.subject_id = sub.id
+               JOIN schema_contents sc ON sv.content_id = sc.id
+               WHERE (sv.deleted = false OR $1) AND (sub.deleted = false OR $1)
+               ORDER BY sub.name, sv.version DESC
+               OFFSET $2",
+        )
+        .bind(include_deleted).bind(offset)
+        .fetch_all(pool).await,
+    }
+}
+
+/// List schema versions across all subjects (helper for non-`DISTINCT ON` variant).
+async fn list_schemas_all_versions(
+    pool: &PgPool,
+    include_deleted: bool,
+    like_pattern: Option<&str>,
+    offset: i64,
+    limit: i64,
+) -> Result<Vec<sqlx::postgres::PgRow>, sqlx::Error> {
+    match (like_pattern, limit >= 0) {
+        (Some(pat), true) => sqlx::query(
+            r"SELECT sub.name AS subject, sc.id, sv.version,
+                     sc.schema_text, sc.schema_type
+               FROM schema_versions sv
+               JOIN subjects sub ON sv.subject_id = sub.id
+               JOIN schema_contents sc ON sv.content_id = sc.id
+               WHERE (sv.deleted = false OR $1) AND (sub.deleted = false OR $1)
+                 AND sub.name LIKE $2 ESCAPE '\'
+               ORDER BY sub.name, sv.version
+               OFFSET $3 LIMIT $4",
+        )
+        .bind(include_deleted).bind(pat).bind(offset).bind(limit)
+        .fetch_all(pool).await,
+
+        (Some(pat), false) => sqlx::query(
+            r"SELECT sub.name AS subject, sc.id, sv.version,
+                     sc.schema_text, sc.schema_type
+               FROM schema_versions sv
+               JOIN subjects sub ON sv.subject_id = sub.id
+               JOIN schema_contents sc ON sv.content_id = sc.id
+               WHERE (sv.deleted = false OR $1) AND (sub.deleted = false OR $1)
+                 AND sub.name LIKE $2 ESCAPE '\'
+               ORDER BY sub.name, sv.version
+               OFFSET $3",
+        )
+        .bind(include_deleted).bind(pat).bind(offset)
+        .fetch_all(pool).await,
+
+        (None, true) => sqlx::query(
+            r"SELECT sub.name AS subject, sc.id, sv.version,
+                     sc.schema_text, sc.schema_type
+               FROM schema_versions sv
+               JOIN subjects sub ON sv.subject_id = sub.id
+               JOIN schema_contents sc ON sv.content_id = sc.id
+               WHERE (sv.deleted = false OR $1) AND (sub.deleted = false OR $1)
+               ORDER BY sub.name, sv.version
+               OFFSET $2 LIMIT $3",
+        )
+        .bind(include_deleted).bind(offset).bind(limit)
+        .fetch_all(pool).await,
+
+        (None, false) => sqlx::query(
+            r"SELECT sub.name AS subject, sc.id, sv.version,
+                     sc.schema_text, sc.schema_type
+               FROM schema_versions sv
+               JOIN subjects sub ON sv.subject_id = sub.id
+               JOIN schema_contents sc ON sv.content_id = sc.id
+               WHERE (sv.deleted = false OR $1) AND (sub.deleted = false OR $1)
+               ORDER BY sub.name, sv.version
+               OFFSET $2",
+        )
+        .bind(include_deleted).bind(offset)
+        .fetch_all(pool).await,
+    }
+}
+
 // -- Deletion --
 
 /// Soft-delete the latest schema version for a subject. Returns the version number if found.

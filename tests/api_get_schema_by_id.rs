@@ -112,3 +112,89 @@ async fn get_schema_by_id_invalid_returns_400() {
 
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
+
+// -- Raw schema text by ID (GET /schemas/ids/{id}/schema) --
+
+#[tokio::test]
+async fn raw_schema_by_id_returns_schema_text() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("raw-id-{}", uuid::Uuid::new_v4());
+
+    let id = common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+
+    let resp = client
+        .get(format!("{base}/schemas/ids/{id}/schema"))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let text: String = resp.json().await.unwrap();
+    assert_eq!(text, common::AVRO_SCHEMA_V1);
+}
+
+#[tokio::test]
+async fn raw_schema_by_id_json_type() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("raw-json-{}", uuid::Uuid::new_v4());
+
+    let id = common::api::register_schema_with_type(
+        &client, &base, &subject, common::JSON_SCHEMA_V1, "JSON",
+    ).await;
+
+    let resp = client
+        .get(format!("{base}/schemas/ids/{id}/schema"))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let text: String = resp.json().await.unwrap();
+    assert_eq!(text, common::JSON_SCHEMA_V1);
+}
+
+#[tokio::test]
+async fn raw_schema_by_id_protobuf_type() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("raw-proto-{}", uuid::Uuid::new_v4());
+
+    let id = common::api::register_schema_with_type(
+        &client, &base, &subject, common::PROTO_SCHEMA_V1, "PROTOBUF",
+    ).await;
+
+    let resp = client
+        .get(format!("{base}/schemas/ids/{id}/schema"))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let text: String = resp.json().await.unwrap();
+    assert_eq!(text, common::PROTO_SCHEMA_V1);
+}
+
+#[tokio::test]
+async fn raw_schema_by_id_nonexistent_returns_40403() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{base}/schemas/ids/{}/schema", i64::MAX))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error_code"], 40403);
+}
+
+#[tokio::test]
+async fn raw_schema_by_id_accepts_subject_param() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("raw-subj-{}", uuid::Uuid::new_v4());
+
+    let id = common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+
+    let resp = client
+        .get(format!("{base}/schemas/ids/{id}/schema?subject={subject}"))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+}

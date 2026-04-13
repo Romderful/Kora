@@ -199,3 +199,124 @@ async fn get_schema_by_version_latest_with_deleted_returns_soft_deleted() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["version"], 2);
 }
+
+// -- Raw schema text by version (GET /subjects/{subject}/versions/{version}/schema) --
+
+#[tokio::test]
+async fn raw_schema_by_version_returns_text() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("raw-ver-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+
+    let resp = client
+        .get(format!("{base}/subjects/{subject}/versions/1/schema"))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let text: String = resp.json().await.unwrap();
+    assert_eq!(text, common::AVRO_SCHEMA_V1);
+}
+
+#[tokio::test]
+async fn raw_schema_by_version_latest() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("raw-latest-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V2).await;
+
+    let resp = client
+        .get(format!("{base}/subjects/{subject}/versions/latest/schema"))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let text: String = resp.json().await.unwrap();
+    assert_eq!(text, common::AVRO_SCHEMA_V2);
+}
+
+#[tokio::test]
+async fn raw_schema_by_version_soft_deleted_without_param_returns_40402() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("raw-softdel-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::delete_version(&client, &base, &subject, "1").await;
+
+    let resp = client
+        .get(format!("{base}/subjects/{subject}/versions/1/schema"))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error_code"], 40402);
+}
+
+#[tokio::test]
+async fn raw_schema_by_version_soft_deleted_with_param_returns_text() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("raw-del-ok-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::delete_version(&client, &base, &subject, "1").await;
+
+    let resp = client
+        .get(format!("{base}/subjects/{subject}/versions/1/schema?deleted=true"))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+    let text: String = resp.json().await.unwrap();
+    assert_eq!(text, common::AVRO_SCHEMA_V1);
+}
+
+#[tokio::test]
+async fn raw_schema_by_version_nonexistent_subject_returns_40401() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{base}/subjects/nonexistent/versions/1/schema"))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error_code"], 40401);
+}
+
+#[tokio::test]
+async fn raw_schema_by_version_nonexistent_version_returns_40402() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("raw-noexist-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+
+    let resp = client
+        .get(format!("{base}/subjects/{subject}/versions/99/schema"))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error_code"], 40402);
+}
+
+#[tokio::test]
+async fn raw_schema_by_version_invalid_version_returns_42202() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("raw-invalid-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+
+    let resp = client
+        .get(format!("{base}/subjects/{subject}/versions/0/schema"))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error_code"], 42202);
+}

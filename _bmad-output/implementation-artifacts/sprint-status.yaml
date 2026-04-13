@@ -1,5 +1,5 @@
 # generated: 2026-04-10
-# last_updated: 2026-04-12
+# last_updated: 2026-04-13
 # project: kora
 # project_key: NOKEY
 # tracking_system: file-system
@@ -29,7 +29,7 @@
 #   4.2 → 4.3 → 4.4/4.5 (parallel) → 5.1 → 5.2 → 6.1/6.2/6.3 (parallel)
 
 generated: 2026-04-10
-last_updated: 2026-04-12
+last_updated: 2026-04-13
 project: kora
 project_key: NOKEY
 tracking_system: file-system
@@ -66,7 +66,7 @@ development_status:
   4-1-compatibility-configuration-crud: done
   4-2-confluent-api-parity-infrastructure: done
   4-3-confluent-api-parity-list-params: done
-  4-4-list-all-schemas-and-raw-schema-text: backlog
+  4-4-list-all-schemas-and-raw-schema-text: done
   4-5-referenced-by-lookup: backlog
   epic-4-retrospective: optional
 

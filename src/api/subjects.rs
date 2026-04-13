@@ -51,7 +51,7 @@ pub struct ListSubjectsParams {
     pub limit: i64,
 }
 
-fn default_subject_prefix() -> String {
+pub(crate) fn default_subject_prefix() -> String {
     ":*:".to_string()
 }
 
@@ -393,6 +393,39 @@ pub async fn delete_version(
     .ok_or(KoraError::VersionNotFound)?;
 
     Ok(Json(deleted))
+}
+
+/// Retrieve schema text by subject and version.
+///
+/// `GET /subjects/{subject}/versions/{version}/schema`
+///
+/// Returns the schema text only — no metadata wrapper.
+///
+/// # Errors
+///
+/// Returns `KoraError::SubjectNotFound` (40401) if the subject doesn't exist,
+/// or `KoraError::VersionNotFound` (40402) if the version doesn't exist.
+pub async fn get_schema_text_by_version(
+    State(pool): State<PgPool>,
+    Path((subject, version)): Path<(String, String)>,
+    Query(params): Query<GetVersionParams>,
+) -> Result<impl IntoResponse, KoraError> {
+    validate_subject(&subject)?;
+
+    let row = if version == "latest" {
+        schemas::find_latest_schema_by_subject(&pool, &subject, params.deleted).await?
+    } else {
+        let v = parse_version(&version)?;
+        schemas::find_schema_by_subject_version(&pool, &subject, v, params.deleted).await?
+    };
+
+    if let Some(sv) = row {
+        Ok(Json(sv.schema))
+    } else if subjects::subject_exists(&pool, &subject, params.deleted).await? {
+        Err(KoraError::VersionNotFound)
+    } else {
+        Err(KoraError::SubjectNotFound)
+    }
 }
 
 // -- Helpers --
