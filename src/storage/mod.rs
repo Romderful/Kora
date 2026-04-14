@@ -1,6 +1,7 @@
 //! `PostgreSQL` storage layer.
 
 pub mod compatibility;
+pub mod mode;
 pub mod references;
 pub mod schemas;
 pub mod subjects;

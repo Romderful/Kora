@@ -1,5 +1,5 @@
 # generated: 2026-04-10
-# last_updated: 2026-04-14
+# last_updated: 2026-04-15
 # project: kora
 # project_key: NOKEY
 # tracking_system: file-system
@@ -29,7 +29,7 @@
 #   4.2 → 4.3 → 4.4/4.5 (parallel) → 5.1 → 5.2 → 6.1/6.2/6.3 (parallel)
 
 generated: 2026-04-10
-last_updated: 2026-04-14
+last_updated: 2026-04-15
 project: kora
 project_key: NOKEY
 tracking_system: file-system
@@ -77,8 +77,8 @@ development_status:
   epic-5-retrospective: optional
 
   # ── Epic 6: Operations & Packaging ──
-  epic-6: backlog
-  6-1-registry-mode-control: backlog
+  epic-6: in-progress
+  6-1-registry-mode-control: done
   6-2-prometheus-metrics: backlog
   6-3-docker-all-in-one-packaging: backlog
   epic-6-retrospective: optional

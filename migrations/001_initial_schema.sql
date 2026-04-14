@@ -40,9 +40,9 @@ CREATE TABLE IF NOT EXISTS schema_references (
 CREATE TABLE IF NOT EXISTS config (
     id                  BIGSERIAL PRIMARY KEY,
     subject             TEXT UNIQUE,
-    compatibility_level TEXT NOT NULL DEFAULT 'BACKWARD',
-    normalize           BOOLEAN NOT NULL DEFAULT false,
-    mode                TEXT NOT NULL DEFAULT 'READWRITE',
+    compatibility_level TEXT,
+    normalize           BOOLEAN,
+    mode                TEXT,
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

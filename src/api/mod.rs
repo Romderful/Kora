@@ -2,6 +2,7 @@
 
 pub mod compatibility;
 pub mod health;
+pub mod mode;
 mod middleware;
 pub mod schemas;
 pub mod subjects;
@@ -69,6 +70,18 @@ pub fn router(pool: PgPool, max_body_size: usize) -> Router {
             get(compatibility::get_subject_compatibility)
                 .put(compatibility::set_subject_compatibility)
                 .delete(compatibility::delete_subject_compatibility),
+        )
+        .route(
+            "/mode",
+            get(mode::get_global_mode)
+                .put(mode::set_global_mode)
+                .delete(mode::delete_global_mode),
+        )
+        .route(
+            "/mode/{subject}",
+            get(mode::get_subject_mode)
+                .put(mode::set_subject_mode)
+                .delete(mode::delete_subject_mode),
         )
         .layer(DefaultBodyLimit::max(max_body_size))
         .layer(middleware::content_type_layer())

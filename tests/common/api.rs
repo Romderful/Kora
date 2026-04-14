@@ -242,3 +242,53 @@ pub async fn delete_subject_compatibility(client: &Client, base: &str, subject: 
         .await
         .unwrap()
 }
+
+// -- Mode operations --
+
+/// Get the global registry mode.
+pub async fn get_global_mode(client: &Client, base: &str) -> Response {
+    client.get(format!("{base}/mode")).send().await.unwrap()
+}
+
+/// Set the global registry mode.
+pub async fn set_global_mode(client: &Client, base: &str, mode: &str) -> Response {
+    client
+        .put(format!("{base}/mode"))
+        .json(&serde_json::json!({"mode": mode}))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// Delete (reset) the global registry mode to READWRITE.
+pub async fn delete_global_mode(client: &Client, base: &str) -> Response {
+    client.delete(format!("{base}/mode")).send().await.unwrap()
+}
+
+/// Get the per-subject registry mode.
+pub async fn get_subject_mode(client: &Client, base: &str, subject: &str) -> Response {
+    client
+        .get(format!("{base}/mode/{subject}"))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// Set the per-subject registry mode.
+pub async fn set_subject_mode(client: &Client, base: &str, subject: &str, mode: &str) -> Response {
+    client
+        .put(format!("{base}/mode/{subject}"))
+        .json(&serde_json::json!({"mode": mode}))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// Delete the per-subject registry mode (falls back to global).
+pub async fn delete_subject_mode(client: &Client, base: &str, subject: &str) -> Response {
+    client
+        .delete(format!("{base}/mode/{subject}"))
+        .send()
+        .await
+        .unwrap()
+}

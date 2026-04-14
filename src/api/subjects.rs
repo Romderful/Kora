@@ -10,6 +10,7 @@ use sqlx::PgPool;
 
 use crate::error::KoraError;
 use crate::schema::{self, SchemaFormat};
+use crate::api::mode::enforce_writable;
 use crate::storage::{compatibility, references, schemas, subjects};
 use crate::types::SchemaReference;
 
@@ -160,6 +161,9 @@ pub async fn register_schema(
     let Json(body) = body.map_err(|e| KoraError::InvalidSchema(e.body_text()))?;
 
     validate_subject(&subject)?;
+
+    // Enforce registry mode before expensive parsing/compat checks.
+    enforce_writable(&pool, &subject).await?;
 
     let format = SchemaFormat::from_optional(body.schema_type.as_deref())?;
     let parsed = schema::parse(format, &body.schema)?;
@@ -387,6 +391,7 @@ pub async fn delete_subject(
     Query(params): Query<PermanentParams>,
 ) -> Result<impl IntoResponse, KoraError> {
     validate_subject(&subject)?;
+    enforce_writable(&pool, &subject).await?;
 
     if params.permanent {
         // Confluent requires subject to be soft-deleted first (40405).
@@ -433,6 +438,7 @@ pub async fn delete_version(
     Query(params): Query<PermanentParams>,
 ) -> Result<impl IntoResponse, KoraError> {
     validate_subject(&subject)?;
+    enforce_writable(&pool, &subject).await?;
 
     let deleted = if params.permanent {
         let v = parse_version(&version)?;

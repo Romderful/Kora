@@ -6,14 +6,14 @@ use sqlx::PgPool;
 
 /// Get the per-subject compatibility level only (no fallback).
 ///
-/// Returns `None` if no per-subject config exists.
+/// Returns `None` if no per-subject config exists or compatibility is not configured.
 ///
 /// # Errors
 ///
 /// Returns a database error on connection failure.
 pub async fn get_subject_level(pool: &PgPool, subject: &str) -> Result<Option<String>, sqlx::Error> {
     sqlx::query_scalar::<_, String>(
-        "SELECT compatibility_level FROM config WHERE subject = $1",
+        "SELECT compatibility_level FROM config WHERE subject = $1 AND compatibility_level IS NOT NULL",
     )
     .bind(subject)
     .fetch_optional(pool)
@@ -27,7 +27,7 @@ pub async fn get_subject_level(pool: &PgPool, subject: &str) -> Result<Option<St
 /// Returns a database error on connection failure.
 pub async fn get_global_level(pool: &PgPool) -> Result<String, sqlx::Error> {
     sqlx::query_scalar::<_, String>(
-        "SELECT compatibility_level FROM config WHERE subject IS NULL",
+        "SELECT COALESCE(compatibility_level, 'BACKWARD') FROM config WHERE subject IS NULL",
     )
     .fetch_one(pool)
     .await
@@ -74,26 +74,49 @@ pub async fn set_subject_level(
     .await
 }
 
-/// Delete per-subject config, returning the **previous** level that was deleted.
+/// Delete per-subject compatibility config by setting it to NULL.
 ///
-/// Returns `None` if no per-subject config existed.
+/// Returns the **previous** `(level, normalize)`, or `None` if not configured.
 ///
 /// # Errors
 ///
 /// Returns a database error on connection failure.
 pub async fn delete_subject_level(pool: &PgPool, subject: &str) -> Result<Option<(String, bool)>, sqlx::Error> {
+    let mut tx = pool.begin().await?;
+
     let row = sqlx::query(
-        "DELETE FROM config WHERE subject = $1 RETURNING compatibility_level, normalize",
+        "SELECT compatibility_level, COALESCE(normalize, false) AS normalize FROM config WHERE subject = $1 AND compatibility_level IS NOT NULL FOR UPDATE",
     )
     .bind(subject)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await?;
 
-    Ok(row.map(|r| {
+    let result = row.map(|r| {
         let level: String = sqlx::Row::get(&r, "compatibility_level");
         let normalize: bool = sqlx::Row::get(&r, "normalize");
         (level, normalize)
-    }))
+    });
+
+    if result.is_some() {
+        // Reset compat fields to NULL; delete row if mode is also NULL.
+        sqlx::query(
+            "UPDATE config SET compatibility_level = NULL, normalize = NULL, updated_at = now() WHERE subject = $1",
+        )
+        .bind(subject)
+        .execute(&mut *tx)
+        .await?;
+
+        // Clean up orphan row (all nullable fields are NULL).
+        sqlx::query(
+            "DELETE FROM config WHERE subject = $1 AND compatibility_level IS NULL AND mode IS NULL",
+        )
+        .bind(subject)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+    Ok(result)
 }
 
 /// Get the global normalize setting.
@@ -103,7 +126,7 @@ pub async fn delete_subject_level(pool: &PgPool, subject: &str) -> Result<Option
 /// Returns a database error on connection failure.
 pub async fn get_global_normalize(pool: &PgPool) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar::<_, bool>(
-        "SELECT normalize FROM config WHERE subject IS NULL",
+        "SELECT COALESCE(normalize, false) FROM config WHERE subject IS NULL",
     )
     .fetch_one(pool)
     .await
@@ -111,12 +134,14 @@ pub async fn get_global_normalize(pool: &PgPool) -> Result<bool, sqlx::Error> {
 
 /// Get the subject-level normalize setting (no fallback).
 ///
+/// Returns `None` if no per-subject compatibility config exists.
+///
 /// # Errors
 ///
 /// Returns a database error on connection failure.
 pub async fn get_subject_normalize(pool: &PgPool, subject: &str) -> Result<Option<bool>, sqlx::Error> {
     sqlx::query_scalar::<_, bool>(
-        "SELECT normalize FROM config WHERE subject = $1",
+        "SELECT COALESCE(normalize, false) FROM config WHERE subject = $1 AND compatibility_level IS NOT NULL",
     )
     .bind(subject)
     .fetch_optional(pool)
@@ -129,20 +154,10 @@ pub async fn get_subject_normalize(pool: &PgPool, subject: &str) -> Result<Optio
 ///
 /// Returns a database error on connection failure.
 pub async fn get_effective_normalize(pool: &PgPool, subject: &str) -> Result<bool, sqlx::Error> {
-    if let Some(n) = sqlx::query_scalar::<_, bool>(
-        "SELECT normalize FROM config WHERE subject = $1",
-    )
-    .bind(subject)
-    .fetch_optional(pool)
-    .await?
-    {
+    if let Some(n) = get_subject_normalize(pool, subject).await? {
         return Ok(n);
     }
-    sqlx::query_scalar::<_, bool>(
-        "SELECT normalize FROM config WHERE subject IS NULL",
-    )
-    .fetch_one(pool)
-    .await
+    get_global_normalize(pool).await
 }
 
 /// Get the effective compatibility level for a subject (subject-level, then global fallback).
@@ -168,7 +183,7 @@ pub async fn delete_global_level(pool: &PgPool) -> Result<(String, bool), sqlx::
     let mut tx = pool.begin().await?;
 
     let row = sqlx::query(
-        "SELECT compatibility_level, normalize FROM config WHERE subject IS NULL FOR UPDATE",
+        "SELECT COALESCE(compatibility_level, 'BACKWARD') AS compatibility_level, COALESCE(normalize, false) AS normalize FROM config WHERE subject IS NULL FOR UPDATE",
     )
     .fetch_one(&mut *tx)
     .await?;
