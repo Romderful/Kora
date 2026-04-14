@@ -86,6 +86,9 @@ pub struct RegisterParams {
     /// When true, normalize schema before fingerprint comparison (already default behavior).
     #[serde(default)]
     pub normalize: bool,
+    /// Schema format hint (accept-and-ignore — format determined from body's `schemaType`).
+    #[serde(default)]
+    pub format: Option<String>,
 }
 
 /// Query parameters for schema check (`POST /subjects/{subject}`).
@@ -97,6 +100,9 @@ pub struct CheckParams {
     /// When true, include soft-deleted schemas in the lookup.
     #[serde(default)]
     pub deleted: bool,
+    /// Schema format hint (accept-and-ignore).
+    #[serde(default)]
+    pub format: Option<String>,
 }
 
 /// Query parameters for `GET /subjects/{subject}/versions/{version}`.
@@ -105,6 +111,12 @@ pub struct GetVersionParams {
     /// When true, include soft-deleted versions in the lookup.
     #[serde(default)]
     pub deleted: bool,
+    /// Schema output format (accept-and-ignore — reference resolution not yet implemented).
+    #[serde(default)]
+    pub format: Option<String>,
+    /// Reference output format (accept-and-ignore).
+    #[serde(default, rename = "referenceFormat")]
+    pub reference_format: Option<String>,
 }
 
 /// Query parameters for DELETE endpoints supporting `?permanent=true`.
@@ -156,13 +168,51 @@ pub async fn register_schema(
     let normalize = params.normalize
         || compatibility::get_effective_normalize(&pool, &subject).await?;
 
+    // Enforce compatibility mode before registration.
+    let level = compatibility::get_effective_compatibility(&pool, &subject).await?;
+    let direction = schema::CompatDirection::from_level(&level);
+    if direction != schema::CompatDirection::None {
+        let is_transitive = level.contains("TRANSITIVE");
+        let versions_to_check: Vec<schemas::SchemaVersion> = if is_transitive {
+            // Transitive: check against ALL active versions.
+            let nums = schemas::list_schema_versions(&pool, &subject, false, false, false, 0, -1).await?;
+            let mut versions = Vec::with_capacity(nums.len());
+            for v in nums {
+                if let Some(sv) = schemas::find_schema_by_subject_version(&pool, &subject, v, false).await? {
+                    versions.push(sv);
+                }
+            }
+            versions
+        } else {
+            // Non-transitive: check against latest version only.
+            schemas::find_latest_schema_by_subject(&pool, &subject, false)
+                .await?
+                .into_iter()
+                .collect()
+        };
+
+        for existing in &versions_to_check {
+            // Skip type-mismatched versions (subject may have mixed types under NONE then switched).
+            let Ok(existing_format) = SchemaFormat::from_optional(Some(&existing.schema_type)) else {
+                continue;
+            };
+            if existing_format != format {
+                continue;
+            }
+            let result = schema::check_compatibility(format, &body.schema, &existing.schema, direction)?;
+            if !result.is_compatible {
+                return Err(KoraError::IncompatibleSchema);
+            }
+        }
+    }
+
     // Validate references before any writes.
     let refs = body.references.as_deref().unwrap_or_default();
     if !refs.is_empty() {
         references::validate_references(&pool, refs).await?;
     }
 
-    let (id, _is_new) = schemas::register_schema_atomically(
+    let (id, version, _is_new) = schemas::register_schema_atomically(
         &pool,
         &subject,
         &schemas::NewSchema {
@@ -177,7 +227,18 @@ pub async fn register_schema(
     )
     .await?;
 
-    Ok(Json(serde_json::json!({ "id": id })))
+    // Confluent RegisterSchemaResponse: id, version, schemaType, schema always present.
+    // References included when non-empty (NON_EMPTY).
+    let mut resp = serde_json::json!({
+        "id": id,
+        "version": version,
+        "schemaType": format.as_str(),
+        "schema": body.schema,
+    });
+    if !refs.is_empty() {
+        resp["references"] = serde_json::json!(refs);
+    }
+    Ok(Json(resp))
 }
 
 /// Check if a schema is registered under a subject.

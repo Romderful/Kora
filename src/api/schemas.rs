@@ -72,6 +72,9 @@ pub struct GetSchemaTextParams {
     /// Subject context (accept and ignore — future: schema resolution context).
     #[serde(default)]
     pub subject: Option<String>,
+    /// Schema output format (accept-and-ignore — reference resolution not yet implemented).
+    #[serde(default)]
+    pub format: Option<String>,
 }
 
 use super::subjects::{default_limit, default_subject_prefix};
@@ -97,15 +100,13 @@ pub async fn get_schema_by_id(
 
     let refs = references::find_references_by_schema_id(&pool, id).await?;
 
+    // Confluent SchemaString DTO: schema, schemaType always present, references omitted when empty.
     let mut body = serde_json::json!({
         "schema": schema_text,
-        "id": id,
-        "references": refs,
+        "schemaType": schema_type,
     });
-
-    // Omit schemaType for AVRO (Confluent default behavior).
-    if schema_type != "AVRO" {
-        body["schemaType"] = serde_json::Value::String(schema_type);
+    if !refs.is_empty() {
+        body["references"] = serde_json::json!(refs);
     }
 
     if params.fetch_max_id {

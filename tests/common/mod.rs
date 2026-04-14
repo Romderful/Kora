@@ -21,13 +21,13 @@ pub const ACTIVE_ONLY: bool = false;
 pub const AVRO_SCHEMA_V1: &str =
     r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"}]}"#;
 
-/// A valid Avro schema with two fields (different from V1 to create a new version).
+/// A valid Avro schema with two fields — backward-compatible with V1 (optional name with default).
 pub const AVRO_SCHEMA_V2: &str =
-    r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":"string"}]}"#;
+    r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":["null","string"],"default":null}]}"#;
 
-/// A valid Avro schema with three fields.
+/// A valid Avro schema with three fields — backward-compatible with V2 (optional active with default).
 pub const AVRO_SCHEMA_V3: &str =
-    r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":"string"},{"name":"active","type":"boolean"}]}"#;
+    r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":["null","string"],"default":null},{"name":"active","type":["null","boolean"],"default":null}]}"#;
 
 /// A valid Avro schema with a different record name (for check-schema tests).
 pub const AVRO_SCHEMA_OTHER: &str =

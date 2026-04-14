@@ -41,16 +41,12 @@ pub struct SchemaVersion {
     pub version: i32,
     /// Raw schema text.
     pub schema: String,
-    /// Schema format — omitted for AVRO (Confluent default behavior).
-    #[serde(rename = "schemaType", skip_serializing_if = "is_avro")]
+    /// Schema format (always included — Confluent serializes "AVRO" via `NON_EMPTY`).
+    #[serde(rename = "schemaType")]
     pub schema_type: String,
     /// Schema references (Protobuf imports, JSON Schema `$ref`, etc.).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub references: Vec<crate::types::SchemaReference>,
-}
-
-fn is_avro(s: &str) -> bool {
-    s == "AVRO"
 }
 
 // -- Registration --
@@ -61,8 +57,8 @@ fn is_avro(s: &str) -> bool {
 /// Content dedup is global: identical schema text shares one `schema_contents` row
 /// and one global ID across all subjects (Confluent behavior).
 ///
-/// Returns `(content_id, is_new)` — if `is_new` is false, the schema was already
-/// registered under this subject (idempotent).
+/// Returns `(content_id, version, is_new)` — if `is_new` is false, the schema was
+/// already registered under this subject (idempotent).
 ///
 /// # Errors
 ///
@@ -73,7 +69,7 @@ pub async fn register_schema_atomically(
     schema: &NewSchema<'_>,
     refs: &[crate::types::SchemaReference],
     normalize: bool,
-) -> Result<(i64, bool), sqlx::Error> {
+) -> Result<(i64, i32, bool), sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     // Upsert subject and lock the row — re-activates soft-deleted subjects.
@@ -93,49 +89,21 @@ pub async fn register_schema_atomically(
 
     // Per-subject idempotency: does this subject already have an active version
     // pointing to content with this fingerprint?
-    let existing_content_id = if normalize {
-        sqlx::query_scalar::<_, i64>(
-            r"SELECT sv.content_id FROM schema_versions sv
-              JOIN schema_contents sc ON sv.content_id = sc.id
-              WHERE sv.subject_id = $1 AND sc.fingerprint = $2 AND sv.deleted = false",
-        )
-        .bind(subject_id)
-        .bind(schema.fingerprint)
-        .fetch_optional(&mut *tx)
-        .await?
-    } else {
-        sqlx::query_scalar::<_, i64>(
-            r"SELECT sv.content_id FROM schema_versions sv
-              JOIN schema_contents sc ON sv.content_id = sc.id
-              WHERE sv.subject_id = $1 AND sc.raw_fingerprint = $2 AND sv.deleted = false",
-        )
-        .bind(subject_id)
-        .bind(schema.raw_fingerprint)
-        .fetch_optional(&mut *tx)
-        .await?
-    };
+    let fp = if normalize { schema.fingerprint } else { schema.raw_fingerprint };
+    let fp_col = if normalize { "fingerprint" } else { "raw_fingerprint" };
 
-    if let Some(content_id) = existing_content_id {
+    if let Some((content_id, version_num)) = find_existing_version(&mut tx, subject_id, fp, fp_col).await? {
         tx.commit().await?;
-        return Ok((content_id, false));
+        return Ok((content_id, version_num, false));
     }
 
     // Global content dedup: does this content already exist anywhere?
-    let existing_content = if normalize {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT id FROM schema_contents WHERE fingerprint = $1",
-        )
-        .bind(schema.fingerprint)
-        .fetch_optional(&mut *tx)
-        .await?
-    } else {
-        sqlx::query_scalar::<_, i64>(
-            "SELECT id FROM schema_contents WHERE raw_fingerprint = $1",
-        )
-        .bind(schema.raw_fingerprint)
-        .fetch_optional(&mut *tx)
-        .await?
-    };
+    let existing_content = sqlx::query_scalar::<_, i64>(
+        &format!("SELECT id FROM schema_contents WHERE {fp_col} = $1"),
+    )
+    .bind(fp)
+    .fetch_optional(&mut *tx)
+    .await?;
 
     let (content_id, content_is_new) = if let Some(id) = existing_content {
         (id, false)
@@ -156,13 +124,14 @@ pub async fn register_schema_atomically(
     };
 
     // Create new version pointing to content.
-    sqlx::query(
+    let version_num: i32 = sqlx::query_scalar(
         r"INSERT INTO schema_versions (subject_id, version, content_id)
-          VALUES ($1, COALESCE((SELECT MAX(version) FROM schema_versions WHERE subject_id = $1), 0) + 1, $2)",
+          VALUES ($1, COALESCE((SELECT MAX(version) FROM schema_versions WHERE subject_id = $1), 0) + 1, $2)
+          RETURNING version",
     )
     .bind(subject_id)
     .bind(content_id)
-    .execute(&mut *tx)
+    .fetch_one(&mut *tx)
     .await?;
 
     // Store references only for new content.
@@ -181,7 +150,30 @@ pub async fn register_schema_atomically(
     }
 
     tx.commit().await?;
-    Ok((content_id, true))
+    Ok((content_id, version_num, true))
+}
+
+/// Check if a subject already has an active version with a given fingerprint.
+///
+/// Returns `(content_id, version)` if found.
+async fn find_existing_version(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    subject_id: i64,
+    fingerprint: &str,
+    fp_column: &str,
+) -> Result<Option<(i64, i32)>, sqlx::Error> {
+    sqlx::query_as::<_, (i64, i32)>(
+        &format!(
+            r"SELECT sv.content_id, sv.version FROM schema_versions sv
+              JOIN schema_contents sc ON sv.content_id = sc.id
+              WHERE sv.subject_id = $1 AND sc.{fp_column} = $2 AND sv.deleted = false
+              ORDER BY sv.version LIMIT 1"
+        ),
+    )
+    .bind(subject_id)
+    .bind(fingerprint)
+    .fetch_optional(&mut **tx)
+    .await
 }
 
 // -- Lookups --

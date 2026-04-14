@@ -418,3 +418,372 @@ async fn register_protobuf_schema_listed_under_versions() {
     let versions = common::api::list_versions(&client, &base, &subject, common::ACTIVE_ONLY).await;
     assert_eq!(versions, vec![1]);
 }
+
+// -- Compatibility enforcement --
+
+#[tokio::test]
+async fn register_backward_incompatible_rejected() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("compat-bw-{}", uuid::Uuid::new_v4());
+
+    // Default mode is BACKWARD. Register V1, then try incompatible schema.
+    common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
+
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error_code"], 40901);
+}
+
+#[tokio::test]
+async fn register_backward_compatible_succeeds() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("compat-bw-ok-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
+
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V2}))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn register_forward_incompatible_rejected() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("compat-fw-{}", uuid::Uuid::new_v4());
+
+    // Set FORWARD mode. Register INCOMPAT (has required "email"), then try V1 (no "email").
+    common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_INCOMPAT).await;
+
+    client.put(format!("{base}/config/{subject}"))
+        .json(&serde_json::json!({"compatibility": "FORWARD"}))
+        .send().await.unwrap();
+
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V1}))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn register_full_backward_only_rejected() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("compat-full-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
+
+    client.put(format!("{base}/config/{subject}"))
+        .json(&serde_json::json!({"compatibility": "FULL"}))
+        .send().await.unwrap();
+
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn register_none_mode_always_succeeds() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("compat-none-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
+
+    client.put(format!("{base}/config/{subject}"))
+        .json(&serde_json::json!({"compatibility": "NONE"}))
+        .send().await.unwrap();
+
+    let totally_different = r#"{"type":"record","name":"Different","fields":[{"name":"x","type":"string"}]}"#;
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": totally_different}))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn register_backward_transitive_checks_all_versions() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("compat-trans-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
+    common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V2).await;
+
+    client.put(format!("{base}/config/{subject}"))
+        .json(&serde_json::json!({"compatibility": "BACKWARD_TRANSITIVE"}))
+        .send().await.unwrap();
+
+    // V3 is backward-compatible with V2 AND V1 → should pass.
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V3}))
+        .send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // INCOMPAT adds required "email" — incompatible with all → rejected.
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
+        .send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn register_full_transitive_checks_both_directions() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("compat-full-trans-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
+
+    client.put(format!("{base}/config/{subject}"))
+        .json(&serde_json::json!({"compatibility": "FULL_TRANSITIVE"}))
+        .send().await.unwrap();
+
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
+        .send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn register_first_schema_always_succeeds() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("compat-first-{}", uuid::Uuid::new_v4());
+
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V1}))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn register_json_schema_enforcement() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("compat-json-{}", uuid::Uuid::new_v4());
+
+    client.post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({
+            "schema": r#"{"type":"object","properties":{"name":{"type":"string"}}}"#,
+            "schemaType": "JSON"
+        }))
+        .send().await.unwrap();
+
+    // Narrowing type from string to integer is incompatible.
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({
+            "schema": r#"{"type":"object","properties":{"name":{"type":"integer"}}}"#,
+            "schemaType": "JSON"
+        }))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn register_protobuf_enforcement() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("compat-proto-enf-{}", uuid::Uuid::new_v4());
+
+    let proto_v1 = r#"syntax = "proto3"; message Test { string name = 1; }"#;
+    let proto_v2_incompat = r#"syntax = "proto3"; message Test { int32 name = 1; }"#;
+
+    client.post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": proto_v1, "schemaType": "PROTOBUF"}))
+        .send().await.unwrap();
+
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": proto_v2_incompat, "schemaType": "PROTOBUF"}))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn register_forward_transitive_checks_all_versions() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("compat-fw-trans-{}", uuid::Uuid::new_v4());
+
+    // schema1: {f1:string, f2:string}
+    // schema2: {f1:string} (removed f2 — forward-compatible with schema1: old reader ignores f2)
+    let schema1 = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2"}]}"#;
+    let schema2 = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"}]}"#;
+    // schema3: {f1:string, f3:string} — forward-compatible with schema2 (old reader ignores f3)
+    // but NOT forward-compatible with schema1 (schema1 expects f2, schema3 doesn't have it)
+    let schema3 = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f3"}]}"#;
+
+    // Register with NONE first to set up the version chain.
+    client.put(format!("{base}/config/{subject}"))
+        .json(&serde_json::json!({"compatibility": "NONE"}))
+        .send().await.unwrap();
+
+    client.post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": schema1}))
+        .send().await.unwrap();
+    client.post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": schema2}))
+        .send().await.unwrap();
+
+    // Now switch to FORWARD_TRANSITIVE.
+    client.put(format!("{base}/config/{subject}"))
+        .json(&serde_json::json!({"compatibility": "FORWARD_TRANSITIVE"}))
+        .send().await.unwrap();
+
+    // schema3 is forward-compatible with schema2 (latest) but NOT with schema1.
+    // FORWARD_TRANSITIVE checks all → should reject.
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": schema3}))
+        .send().await.unwrap();
+
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn register_enforcement_skips_soft_deleted_versions() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("compat-del-{}", uuid::Uuid::new_v4());
+
+    // Register schema1 (backward-compatible baseline).
+    let schema1 = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"}]}"#;
+    // wrongSchema2: adds field g as string with default — backward-compatible with schema1.
+    let wrong_schema2 = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"g","default":"d"}]}"#;
+    // correctSchema2: adds field g as int with default — backward-compatible with schema1,
+    // but NOT backward-compatible with wrongSchema2 (g changed string→int).
+    let correct_schema2 = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"int","name":"g","default":0}]}"#;
+
+    client.put(format!("{base}/config/{subject}"))
+        .json(&serde_json::json!({"compatibility": "BACKWARD"}))
+        .send().await.unwrap();
+
+    client.post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": schema1}))
+        .send().await.unwrap();
+    client.post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": wrong_schema2}))
+        .send().await.unwrap();
+
+    // correctSchema2 is incompatible with wrongSchema2 (latest) → rejected.
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": correct_schema2}))
+        .send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+
+    // Soft-delete wrongSchema2 (version 2).
+    client.delete(format!("{base}/subjects/{subject}/versions/2"))
+        .send().await.unwrap();
+
+    // Now latest active is schema1. correctSchema2 is backward-compatible with schema1 → succeeds.
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": correct_schema2}))
+        .send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+/// Confluent `testCompatibilityLevelChangeToNone`: reject → change to NONE → succeed.
+#[tokio::test]
+async fn register_level_change_to_none_allows_incompatible() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("compat-lvl-none-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
+
+    // Default BACKWARD — incompatible schema rejected.
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
+        .send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+
+    // Change to NONE — same schema now succeeds.
+    client.put(format!("{base}/config"))
+        .json(&serde_json::json!({"compatibility": "NONE"}))
+        .send().await.unwrap();
+
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
+        .send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Reset global back to BACKWARD for test isolation.
+    client.delete(format!("{base}/config")).send().await.unwrap();
+}
+
+/// Confluent `testCompatibilityLevelChangeToBackward`: register under FORWARD, switch to BACKWARD, reject.
+#[tokio::test]
+async fn register_level_change_forward_to_backward() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("compat-lvl-fw-bw-{}", uuid::Uuid::new_v4());
+
+    let schema1 = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"}]}"#;
+    // schema2 adds required f2 — forward-compatible with schema1 (old reader ignores f2).
+    let schema2 = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2"}]}"#;
+    // schema3 adds required f3 — forward-compatible with schema2 but NOT backward-compatible
+    // (schema2 reader expects f2+f1, schema3 adds f3 without default).
+    let schema3_no_default = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2"},{"type":"string","name":"f3"}]}"#;
+    let schema3_with_default = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2"},{"type":"string","name":"f3","default":"foo"}]}"#;
+
+    // Set FORWARD and register schema1 + schema2.
+    client.put(format!("{base}/config/{subject}"))
+        .json(&serde_json::json!({"compatibility": "FORWARD"}))
+        .send().await.unwrap();
+
+    client.post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": schema1}))
+        .send().await.unwrap();
+    client.post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": schema2}))
+        .send().await.unwrap();
+
+    // Switch to BACKWARD.
+    client.put(format!("{base}/config/{subject}"))
+        .json(&serde_json::json!({"compatibility": "BACKWARD"}))
+        .send().await.unwrap();
+
+    // schema3 without default is forward-compatible but NOT backward-compatible → rejected.
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": schema3_no_default}))
+        .send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+
+    // schema3 with default IS backward-compatible → succeeds.
+    let resp = client
+        .post(format!("{base}/subjects/{subject}/versions"))
+        .json(&serde_json::json!({"schema": schema3_with_default}))
+        .send().await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}

@@ -18,8 +18,7 @@ async fn get_schema_by_id_succeeds() {
 
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["schema"].as_str().unwrap(), common::AVRO_SCHEMA_V1);
-    // schemaType is omitted for AVRO (Confluent default behavior).
-    assert!(body.get("schemaType").is_none(), "schemaType should be omitted for AVRO");
+    assert_eq!(body["schemaType"], "AVRO");
 }
 
 #[tokio::test]

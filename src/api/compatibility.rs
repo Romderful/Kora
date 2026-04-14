@@ -162,6 +162,7 @@ pub async fn delete_global_compatibility(
     State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, KoraError> {
     let (prev_level, prev_normalize) = compatibility::delete_global_level(&pool).await?;
+    // Confluent returns the previous Config object (before deletion).
     Ok(Json(serde_json::json!({ "compatibilityLevel": prev_level, "normalize": prev_normalize })))
 }
 
@@ -182,6 +183,7 @@ pub async fn delete_subject_compatibility(
     let (prev_level, prev_normalize) = compatibility::delete_subject_level(&pool, &subject)
         .await?
         .ok_or(KoraError::SubjectNotFound)?;
+    // Confluent returns the previous Config object (before deletion).
     Ok(Json(serde_json::json!({ "compatibilityLevel": prev_level, "normalize": prev_normalize })))
 }
 
@@ -219,8 +221,7 @@ pub async fn test_compatibility_by_version(
 ///
 /// # Errors
 ///
-/// Returns `KoraError::SubjectNotFound` (40401) if the subject doesn't exist,
-/// or `KoraError::InvalidSchema` (42201) for unparseable schemas.
+/// Returns `KoraError::InvalidSchema` (42201) for unparseable schemas.
 pub async fn test_compatibility_against_all_versions(
     State(pool): State<PgPool>,
     Path(subject): Path<String>,
@@ -229,10 +230,7 @@ pub async fn test_compatibility_against_all_versions(
 ) -> Result<impl IntoResponse, KoraError> {
     let (format, body) = parse_compat_request(body)?;
 
-    if !subjects::subject_exists(&pool, &subject, false).await? {
-        return Err(KoraError::SubjectNotFound);
-    }
-
+    // Confluent: nonexistent subject → is_compatible: true (no versions to check).
     let version_nums = schemas::list_schema_versions(&pool, &subject, false, false, false, 0, -1).await?;
     if version_nums.is_empty() {
         return Ok(Json(compat_response(true, &[], params.verbose)));
@@ -247,7 +245,14 @@ pub async fn test_compatibility_against_all_versions(
         let existing = schemas::find_schema_by_subject_version(&pool, &subject, *v, false)
             .await?
             .ok_or(KoraError::VersionNotFound)?;
-        check_type_match(format, &existing)?;
+
+        // Skip type-mismatched versions (subject may have mixed types under NONE then switched).
+        let Ok(existing_format) = SchemaFormat::from_optional(Some(&existing.schema_type)) else {
+            continue;
+        };
+        if existing_format != format {
+            continue;
+        }
 
         let result = schema::check_compatibility(format, &body.schema, &existing.schema, direction)?;
         if !result.is_compatible {

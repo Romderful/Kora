@@ -71,9 +71,9 @@ development_status:
   epic-4-retrospective: optional
 
   # ── Epic 5: Compatibility Enforcement ──
-  epic-5: in-progress
+  epic-5: done
   5-1-compatibility-test-endpoint: done
-  5-2-enforce-all-compatibility-modes: backlog
+  5-2-enforce-all-compatibility-modes: done
   epic-5-retrospective: optional
 
   # ── Epic 6: Operations & Packaging ──

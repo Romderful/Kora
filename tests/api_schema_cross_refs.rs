@@ -97,6 +97,9 @@ async fn get_versions_by_schema_id_multiple_succeeds() {
     let schema1 = common::unique_avro_schema();
     let schema2 = common::unique_avro_schema();
 
+    // Different record names are backward-incompatible — disable compat for this cross-ref test.
+    common::api::set_subject_compatibility(&client, &base, &subject, "NONE").await;
+
     let id1 = common::api::register_schema(&client, &base, &subject, &schema1).await;
     let id2 = common::api::register_schema(&client, &base, &subject, &schema2).await;
 

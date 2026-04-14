@@ -22,7 +22,7 @@ async fn check_schema_registered_returns_200() {
     assert_eq!(body["id"], id);
     assert_eq!(body["version"], 1);
     assert_eq!(body["schema"], common::AVRO_SCHEMA_V1);
-    assert!(body.get("schemaType").is_none(), "schemaType should be omitted for AVRO");
+    assert_eq!(body["schemaType"], "AVRO");
 }
 
 #[tokio::test]

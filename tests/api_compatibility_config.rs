@@ -159,7 +159,7 @@ async fn delete_subject_compatibility_returns_previous_level() {
     // Set per-subject config to NONE.
     common::api::set_subject_compatibility(&client, &base, &subject, "NONE").await;
 
-    // Delete per-subject config → returns previous level "NONE".
+    // Delete per-subject config → returns previous Config object.
     let resp = common::api::delete_subject_compatibility(&client, &base, &subject).await;
     assert_eq!(resp.status(), StatusCode::OK);
 

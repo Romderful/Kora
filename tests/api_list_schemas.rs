@@ -176,7 +176,7 @@ async fn list_schemas_omits_schema_type_for_avro() {
     let avro_entry = body.iter().find(|v| v["subject"] == s_avro).unwrap();
     let json_entry = body.iter().find(|v| v["subject"] == s_json).unwrap();
 
-    assert!(avro_entry.get("schemaType").is_none(), "schemaType should be omitted for AVRO");
+    assert_eq!(avro_entry["schemaType"], "AVRO");
     assert_eq!(json_entry["schemaType"], "JSON", "schemaType should be present for JSON");
 }
 
