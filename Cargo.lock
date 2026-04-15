@@ -1335,7 +1335,7 @@ dependencies = [
 
 [[package]]
 name = "kora"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "apache-avro",
  "axum",
