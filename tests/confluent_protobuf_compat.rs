@@ -48,10 +48,16 @@ fn confluent_protobuf_diff_examples() {
     let mut failures = Vec::new();
 
     for (i, case) in cases.iter().enumerate() {
-        let old_deps: Vec<(String, String)> = case.original_dependencies.iter()
-            .map(|d| (d.name.clone(), d.dependency.clone())).collect();
-        let new_deps: Vec<(String, String)> = case.update_dependencies.iter()
-            .map(|d| (d.name.clone(), d.dependency.clone())).collect();
+        let old_deps: Vec<(String, String)> = case
+            .original_dependencies
+            .iter()
+            .map(|d| (d.name.clone(), d.dependency.clone()))
+            .collect();
+        let new_deps: Vec<(String, String)> = case
+            .update_dependencies
+            .iter()
+            .map(|d| (d.name.clone(), d.dependency.clone()))
+            .collect();
 
         let result = kora::schema::protobuf::check_compatibility_with_deps(
             &case.update_schema,
@@ -125,7 +131,10 @@ message TestMessage {
         result.messages
     );
     assert!(
-        result.messages.iter().any(|m| m.contains("field type changed")),
+        result
+            .messages
+            .iter()
+            .any(|m| m.contains("field type changed")),
         "should detect FIELD_SCALAR_KIND_CHANGED: {:?}",
         result.messages
     );

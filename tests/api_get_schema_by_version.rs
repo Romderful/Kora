@@ -126,8 +126,12 @@ async fn get_schema_by_version_accepts_format_params() {
     common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
 
     let resp = client
-        .get(format!("{base}/subjects/{subject}/versions/1?format=serialized&referenceFormat=DEFAULT"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/subjects/{subject}/versions/1?format=serialized&referenceFormat=DEFAULT"
+        ))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -167,7 +171,11 @@ async fn get_schema_by_version_deleted_returns_soft_deleted() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK, "deleted=true should return soft-deleted version");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "deleted=true should return soft-deleted version"
+    );
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["version"], 2);
 }
@@ -191,11 +199,17 @@ async fn get_schema_by_version_latest_with_deleted_returns_soft_deleted() {
 
     // latest with deleted=true → returns version 2 (soft-deleted but highest).
     let resp = client
-        .get(format!("{base}/subjects/{subject}/versions/latest?deleted=true"))
+        .get(format!(
+            "{base}/subjects/{subject}/versions/latest?deleted=true"
+        ))
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK, "latest?deleted=true should consider soft-deleted versions");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "latest?deleted=true should consider soft-deleted versions"
+    );
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["version"], 2);
 }
@@ -212,7 +226,9 @@ async fn raw_schema_by_version_returns_text() {
 
     let resp = client
         .get(format!("{base}/subjects/{subject}/versions/1/schema"))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
     let text: String = resp.json().await.unwrap();
@@ -230,7 +246,9 @@ async fn raw_schema_by_version_latest() {
 
     let resp = client
         .get(format!("{base}/subjects/{subject}/versions/latest/schema"))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
     let text: String = resp.json().await.unwrap();
@@ -248,7 +266,9 @@ async fn raw_schema_by_version_soft_deleted_without_param_returns_40402() {
 
     let resp = client
         .get(format!("{base}/subjects/{subject}/versions/1/schema"))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -265,8 +285,12 @@ async fn raw_schema_by_version_soft_deleted_with_param_returns_text() {
     common::api::delete_version(&client, &base, &subject, "1").await;
 
     let resp = client
-        .get(format!("{base}/subjects/{subject}/versions/1/schema?deleted=true"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/subjects/{subject}/versions/1/schema?deleted=true"
+        ))
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
     let text: String = resp.json().await.unwrap();
@@ -280,7 +304,9 @@ async fn raw_schema_by_version_nonexistent_subject_returns_40401() {
 
     let resp = client
         .get(format!("{base}/subjects/nonexistent/versions/1/schema"))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -297,7 +323,9 @@ async fn raw_schema_by_version_nonexistent_version_returns_40402() {
 
     let resp = client
         .get(format!("{base}/subjects/{subject}/versions/99/schema"))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -314,7 +342,9 @@ async fn raw_schema_by_version_invalid_version_returns_42202() {
 
     let resp = client
         .get(format!("{base}/subjects/{subject}/versions/0/schema"))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let body: serde_json::Value = resp.json().await.unwrap();

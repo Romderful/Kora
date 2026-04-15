@@ -89,18 +89,28 @@ pub async fn register_schema_atomically(
 
     // Per-subject idempotency: does this subject already have an active version
     // pointing to content with this fingerprint?
-    let fp = if normalize { schema.fingerprint } else { schema.raw_fingerprint };
-    let fp_col = if normalize { "fingerprint" } else { "raw_fingerprint" };
+    let fp = if normalize {
+        schema.fingerprint
+    } else {
+        schema.raw_fingerprint
+    };
+    let fp_col = if normalize {
+        "fingerprint"
+    } else {
+        "raw_fingerprint"
+    };
 
-    if let Some((content_id, version_num)) = find_existing_version(&mut tx, subject_id, fp, fp_col).await? {
+    if let Some((content_id, version_num)) =
+        find_existing_version(&mut tx, subject_id, fp, fp_col).await?
+    {
         tx.commit().await?;
         return Ok((content_id, version_num, false));
     }
 
     // Global content dedup: does this content already exist anywhere?
-    let existing_content = sqlx::query_scalar::<_, i64>(
-        &format!("SELECT id FROM schema_contents WHERE {fp_col} = $1"),
-    )
+    let existing_content = sqlx::query_scalar::<_, i64>(&format!(
+        "SELECT id FROM schema_contents WHERE {fp_col} = $1"
+    ))
     .bind(fp)
     .fetch_optional(&mut *tx)
     .await?;
@@ -162,14 +172,12 @@ async fn find_existing_version(
     fingerprint: &str,
     fp_column: &str,
 ) -> Result<Option<(i64, i32)>, sqlx::Error> {
-    sqlx::query_as::<_, (i64, i32)>(
-        &format!(
-            r"SELECT sv.content_id, sv.version FROM schema_versions sv
+    sqlx::query_as::<_, (i64, i32)>(&format!(
+        r"SELECT sv.content_id, sv.version FROM schema_versions sv
               JOIN schema_contents sc ON sv.content_id = sc.id
               WHERE sv.subject_id = $1 AND sc.{fp_column} = $2 AND sv.deleted = false
               ORDER BY sv.version LIMIT 1"
-        ),
-    )
+    ))
     .bind(subject_id)
     .bind(fingerprint)
     .fetch_optional(&mut **tx)
@@ -263,30 +271,34 @@ pub async fn find_schema_by_subject_id_and_fingerprint(
     include_deleted: bool,
 ) -> Result<Option<SchemaVersion>, sqlx::Error> {
     let query = match (normalize, include_deleted) {
-        (true, true) =>
+        (true, true) => {
             r"SELECT sc.id, sub.name as subject, sv.version, sc.schema_type, sc.schema_text
                FROM schema_versions sv
                JOIN subjects sub ON sv.subject_id = sub.id
                JOIN schema_contents sc ON sv.content_id = sc.id
-               WHERE sv.subject_id = $1 AND sc.fingerprint = $2",
-        (true, false) =>
+               WHERE sv.subject_id = $1 AND sc.fingerprint = $2"
+        }
+        (true, false) => {
             r"SELECT sc.id, sub.name as subject, sv.version, sc.schema_type, sc.schema_text
                FROM schema_versions sv
                JOIN subjects sub ON sv.subject_id = sub.id
                JOIN schema_contents sc ON sv.content_id = sc.id
-               WHERE sv.subject_id = $1 AND sc.fingerprint = $2 AND sv.deleted = false",
-        (false, true) =>
+               WHERE sv.subject_id = $1 AND sc.fingerprint = $2 AND sv.deleted = false"
+        }
+        (false, true) => {
             r"SELECT sc.id, sub.name as subject, sv.version, sc.schema_type, sc.schema_text
                FROM schema_versions sv
                JOIN subjects sub ON sv.subject_id = sub.id
                JOIN schema_contents sc ON sv.content_id = sc.id
-               WHERE sv.subject_id = $1 AND sc.raw_fingerprint = $2",
-        (false, false) =>
+               WHERE sv.subject_id = $1 AND sc.raw_fingerprint = $2"
+        }
+        (false, false) => {
             r"SELECT sc.id, sub.name as subject, sv.version, sc.schema_type, sc.schema_text
                FROM schema_versions sv
                JOIN subjects sub ON sv.subject_id = sub.id
                JOIN schema_contents sc ON sv.content_id = sc.id
-               WHERE sv.subject_id = $1 AND sc.raw_fingerprint = $2 AND sv.deleted = false",
+               WHERE sv.subject_id = $1 AND sc.raw_fingerprint = $2 AND sv.deleted = false"
+        }
     };
     sqlx::query(query)
         .bind(subject_id)
@@ -302,12 +314,18 @@ pub async fn find_schema_by_subject_id_and_fingerprint(
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn find_schema_by_id(pool: &PgPool, id: i64) -> Result<Option<(String, String)>, sqlx::Error> {
+pub async fn find_schema_by_id(
+    pool: &PgPool,
+    id: i64,
+) -> Result<Option<(String, String)>, sqlx::Error> {
     sqlx::query("SELECT schema_text, schema_type FROM schema_contents WHERE id = $1")
         .bind(id)
         .fetch_optional(pool)
         .await
-        .map(|opt| opt.as_ref().map(|row| (row.get("schema_text"), row.get("schema_type"))))
+        .map(|opt| {
+            opt.as_ref()
+                .map(|row| (row.get("schema_text"), row.get("schema_type")))
+        })
 }
 
 /// Get the maximum schema content ID in the registry.
@@ -477,10 +495,13 @@ pub async fn find_versions_by_schema_id(
         .await?,
     };
 
-    Ok(rows.iter().map(|row| SubjectVersion {
-        subject: row.get("subject"),
-        version: row.get("version"),
-    }).collect())
+    Ok(rows
+        .iter()
+        .map(|row| SubjectVersion {
+            subject: row.get("subject"),
+            version: row.get("version"),
+        })
+        .collect())
 }
 
 // -- Listing --
@@ -624,14 +645,31 @@ pub async fn list_schemas(
     limit: i64,
 ) -> Result<Vec<SchemaVersion>, sqlx::Error> {
     let like_pattern = prefix.filter(|p| !p.is_empty()).map(|p| {
-        let escaped = p.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let escaped = p
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
         format!("{escaped}%")
     });
 
     let rows = if latest_only {
-        list_schemas_latest(pool, include_deleted, like_pattern.as_deref(), offset, limit).await?
+        list_schemas_latest(
+            pool,
+            include_deleted,
+            like_pattern.as_deref(),
+            offset,
+            limit,
+        )
+        .await?
     } else {
-        list_schemas_all_versions(pool, include_deleted, like_pattern.as_deref(), offset, limit).await?
+        list_schemas_all_versions(
+            pool,
+            include_deleted,
+            like_pattern.as_deref(),
+            offset,
+            limit,
+        )
+        .await?
     };
 
     Ok(rows.iter().map(row_to_schema_version).collect())
@@ -646,8 +684,9 @@ async fn list_schemas_latest(
     limit: i64,
 ) -> Result<Vec<sqlx::postgres::PgRow>, sqlx::Error> {
     match (like_pattern, limit >= 0) {
-        (Some(pat), true) => sqlx::query(
-            r"SELECT DISTINCT ON (sub.name) sub.name AS subject, sc.id, sv.version,
+        (Some(pat), true) => {
+            sqlx::query(
+                r"SELECT DISTINCT ON (sub.name) sub.name AS subject, sc.id, sv.version,
                      sc.schema_text, sc.schema_type
                FROM schema_versions sv
                JOIN subjects sub ON sv.subject_id = sub.id
@@ -656,12 +695,18 @@ async fn list_schemas_latest(
                  AND sub.name LIKE $2 ESCAPE '\'
                ORDER BY sub.name, sv.version DESC
                OFFSET $3 LIMIT $4",
-        )
-        .bind(include_deleted).bind(pat).bind(offset).bind(limit)
-        .fetch_all(pool).await,
+            )
+            .bind(include_deleted)
+            .bind(pat)
+            .bind(offset)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
+        }
 
-        (Some(pat), false) => sqlx::query(
-            r"SELECT DISTINCT ON (sub.name) sub.name AS subject, sc.id, sv.version,
+        (Some(pat), false) => {
+            sqlx::query(
+                r"SELECT DISTINCT ON (sub.name) sub.name AS subject, sc.id, sv.version,
                      sc.schema_text, sc.schema_type
                FROM schema_versions sv
                JOIN subjects sub ON sv.subject_id = sub.id
@@ -670,12 +715,17 @@ async fn list_schemas_latest(
                  AND sub.name LIKE $2 ESCAPE '\'
                ORDER BY sub.name, sv.version DESC
                OFFSET $3",
-        )
-        .bind(include_deleted).bind(pat).bind(offset)
-        .fetch_all(pool).await,
+            )
+            .bind(include_deleted)
+            .bind(pat)
+            .bind(offset)
+            .fetch_all(pool)
+            .await
+        }
 
-        (None, true) => sqlx::query(
-            r"SELECT DISTINCT ON (sub.name) sub.name AS subject, sc.id, sv.version,
+        (None, true) => {
+            sqlx::query(
+                r"SELECT DISTINCT ON (sub.name) sub.name AS subject, sc.id, sv.version,
                      sc.schema_text, sc.schema_type
                FROM schema_versions sv
                JOIN subjects sub ON sv.subject_id = sub.id
@@ -683,12 +733,17 @@ async fn list_schemas_latest(
                WHERE (sv.deleted = false OR $1) AND (sub.deleted = false OR $1)
                ORDER BY sub.name, sv.version DESC
                OFFSET $2 LIMIT $3",
-        )
-        .bind(include_deleted).bind(offset).bind(limit)
-        .fetch_all(pool).await,
+            )
+            .bind(include_deleted)
+            .bind(offset)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
+        }
 
-        (None, false) => sqlx::query(
-            r"SELECT DISTINCT ON (sub.name) sub.name AS subject, sc.id, sv.version,
+        (None, false) => {
+            sqlx::query(
+                r"SELECT DISTINCT ON (sub.name) sub.name AS subject, sc.id, sv.version,
                      sc.schema_text, sc.schema_type
                FROM schema_versions sv
                JOIN subjects sub ON sv.subject_id = sub.id
@@ -696,9 +751,12 @@ async fn list_schemas_latest(
                WHERE (sv.deleted = false OR $1) AND (sub.deleted = false OR $1)
                ORDER BY sub.name, sv.version DESC
                OFFSET $2",
-        )
-        .bind(include_deleted).bind(offset)
-        .fetch_all(pool).await,
+            )
+            .bind(include_deleted)
+            .bind(offset)
+            .fetch_all(pool)
+            .await
+        }
     }
 }
 
@@ -711,8 +769,9 @@ async fn list_schemas_all_versions(
     limit: i64,
 ) -> Result<Vec<sqlx::postgres::PgRow>, sqlx::Error> {
     match (like_pattern, limit >= 0) {
-        (Some(pat), true) => sqlx::query(
-            r"SELECT sub.name AS subject, sc.id, sv.version,
+        (Some(pat), true) => {
+            sqlx::query(
+                r"SELECT sub.name AS subject, sc.id, sv.version,
                      sc.schema_text, sc.schema_type
                FROM schema_versions sv
                JOIN subjects sub ON sv.subject_id = sub.id
@@ -721,12 +780,18 @@ async fn list_schemas_all_versions(
                  AND sub.name LIKE $2 ESCAPE '\'
                ORDER BY sub.name, sv.version
                OFFSET $3 LIMIT $4",
-        )
-        .bind(include_deleted).bind(pat).bind(offset).bind(limit)
-        .fetch_all(pool).await,
+            )
+            .bind(include_deleted)
+            .bind(pat)
+            .bind(offset)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
+        }
 
-        (Some(pat), false) => sqlx::query(
-            r"SELECT sub.name AS subject, sc.id, sv.version,
+        (Some(pat), false) => {
+            sqlx::query(
+                r"SELECT sub.name AS subject, sc.id, sv.version,
                      sc.schema_text, sc.schema_type
                FROM schema_versions sv
                JOIN subjects sub ON sv.subject_id = sub.id
@@ -735,12 +800,17 @@ async fn list_schemas_all_versions(
                  AND sub.name LIKE $2 ESCAPE '\'
                ORDER BY sub.name, sv.version
                OFFSET $3",
-        )
-        .bind(include_deleted).bind(pat).bind(offset)
-        .fetch_all(pool).await,
+            )
+            .bind(include_deleted)
+            .bind(pat)
+            .bind(offset)
+            .fetch_all(pool)
+            .await
+        }
 
-        (None, true) => sqlx::query(
-            r"SELECT sub.name AS subject, sc.id, sv.version,
+        (None, true) => {
+            sqlx::query(
+                r"SELECT sub.name AS subject, sc.id, sv.version,
                      sc.schema_text, sc.schema_type
                FROM schema_versions sv
                JOIN subjects sub ON sv.subject_id = sub.id
@@ -748,12 +818,17 @@ async fn list_schemas_all_versions(
                WHERE (sv.deleted = false OR $1) AND (sub.deleted = false OR $1)
                ORDER BY sub.name, sv.version
                OFFSET $2 LIMIT $3",
-        )
-        .bind(include_deleted).bind(offset).bind(limit)
-        .fetch_all(pool).await,
+            )
+            .bind(include_deleted)
+            .bind(offset)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
+        }
 
-        (None, false) => sqlx::query(
-            r"SELECT sub.name AS subject, sc.id, sv.version,
+        (None, false) => {
+            sqlx::query(
+                r"SELECT sub.name AS subject, sc.id, sv.version,
                      sc.schema_text, sc.schema_type
                FROM schema_versions sv
                JOIN subjects sub ON sv.subject_id = sub.id
@@ -761,9 +836,12 @@ async fn list_schemas_all_versions(
                WHERE (sv.deleted = false OR $1) AND (sub.deleted = false OR $1)
                ORDER BY sub.name, sv.version
                OFFSET $2",
-        )
-        .bind(include_deleted).bind(offset)
-        .fetch_all(pool).await,
+            )
+            .bind(include_deleted)
+            .bind(offset)
+            .fetch_all(pool)
+            .await
+        }
     }
 }
 
@@ -774,7 +852,10 @@ async fn list_schemas_all_versions(
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn soft_delete_latest_schema(pool: &PgPool, subject: &str) -> Result<Option<i32>, sqlx::Error> {
+pub async fn soft_delete_latest_schema(
+    pool: &PgPool,
+    subject: &str,
+) -> Result<Option<i32>, sqlx::Error> {
     sqlx::query_scalar::<_, i32>(
         r"UPDATE schema_versions SET deleted = true
            WHERE id = (
@@ -843,7 +924,11 @@ pub async fn hard_delete_schema_version(
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn version_is_soft_deleted(pool: &PgPool, subject: &str, version: i32) -> Result<bool, sqlx::Error> {
+pub async fn version_is_soft_deleted(
+    pool: &PgPool,
+    subject: &str,
+    version: i32,
+) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar::<_, bool>(
         r"SELECT EXISTS(
             SELECT 1 FROM schema_versions sv JOIN subjects sub ON sv.subject_id = sub.id
@@ -861,7 +946,11 @@ pub async fn version_is_soft_deleted(pool: &PgPool, subject: &str, version: i32)
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn version_is_active(pool: &PgPool, subject: &str, version: i32) -> Result<bool, sqlx::Error> {
+pub async fn version_is_active(
+    pool: &PgPool,
+    subject: &str,
+    version: i32,
+) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar::<_, bool>(
         r"SELECT EXISTS(
             SELECT 1 FROM schema_versions sv JOIN subjects sub ON sv.subject_id = sub.id

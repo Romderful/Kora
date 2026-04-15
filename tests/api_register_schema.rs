@@ -74,7 +74,10 @@ async fn register_schema_missing_body_returns_422() {
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["error_code"], 42201, "should return Confluent error format");
+    assert_eq!(
+        body["error_code"], 42201,
+        "should return Confluent error format"
+    );
 }
 
 #[tokio::test]
@@ -108,7 +111,9 @@ async fn register_with_normalize_deduplicates_whitespace_variants() {
         .send()
         .await
         .unwrap();
-    let id1 = resp1.json::<serde_json::Value>().await.unwrap()["id"].as_i64().unwrap();
+    let id1 = resp1.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_i64()
+        .unwrap();
 
     let resp2 = client
         .post(format!("{base}/subjects/{subject}/versions?normalize=true"))
@@ -116,9 +121,14 @@ async fn register_with_normalize_deduplicates_whitespace_variants() {
         .send()
         .await
         .unwrap();
-    let id2 = resp2.json::<serde_json::Value>().await.unwrap()["id"].as_i64().unwrap();
+    let id2 = resp2.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_i64()
+        .unwrap();
 
-    assert_eq!(id1, id2, "normalize=true should deduplicate schemas that differ only in whitespace");
+    assert_eq!(
+        id1, id2,
+        "normalize=true should deduplicate schemas that differ only in whitespace"
+    );
 }
 
 #[tokio::test]
@@ -135,14 +145,18 @@ async fn register_with_subject_config_normalize_deduplicates() {
         .await
         .unwrap();
 
-    let schema_compact = r#"{"type":"record","name":"CfgNorm","fields":[{"name":"id","type":"int"}]}"#;
+    let schema_compact =
+        r#"{"type":"record","name":"CfgNorm","fields":[{"name":"id","type":"int"}]}"#;
     let schema_spaced = r#"{  "type" : "record",  "name" : "CfgNorm",  "fields" : [ { "name" : "id", "type" : "int" } ] }"#;
 
     // Register WITHOUT ?normalize=true — config should drive normalization.
     let id1 = common::api::register_schema(&client, &base, &subject, schema_compact).await;
     let id2 = common::api::register_schema(&client, &base, &subject, schema_spaced).await;
 
-    assert_eq!(id1, id2, "subject config normalize=true should deduplicate without query param");
+    assert_eq!(
+        id1, id2,
+        "subject config normalize=true should deduplicate without query param"
+    );
 }
 
 // -- Avro Schema --
@@ -169,9 +183,16 @@ async fn register_avro_schema_valid_succeeds() {
     assert_eq!(row.get::<String, _>("schema_type"), "AVRO");
     assert_eq!(row.get::<String, _>("schema_text"), common::AVRO_SCHEMA_V1);
 
-    let expected = kora::schema::parse(kora::schema::SchemaFormat::Avro, common::AVRO_SCHEMA_V1).unwrap();
-    assert_eq!(row.get::<Option<String>, _>("canonical_form").as_deref(), Some(expected.canonical_form.as_str()));
-    assert_eq!(row.get::<Option<String>, _>("fingerprint").as_deref(), Some(expected.fingerprint.as_str()));
+    let expected =
+        kora::schema::parse(kora::schema::SchemaFormat::Avro, common::AVRO_SCHEMA_V1).unwrap();
+    assert_eq!(
+        row.get::<Option<String>, _>("canonical_form").as_deref(),
+        Some(expected.canonical_form.as_str())
+    );
+    assert_eq!(
+        row.get::<Option<String>, _>("fingerprint").as_deref(),
+        Some(expected.fingerprint.as_str())
+    );
 
     // Verify the version row.
     let version_count: i64 = sqlx::query_scalar::<_, i64>(
@@ -204,7 +225,10 @@ async fn register_avro_schema_idempotent_returns_same_id() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(count, 1, "idempotent registration should not create duplicate rows");
+    assert_eq!(
+        count, 1,
+        "idempotent registration should not create duplicate rows"
+    );
 }
 
 #[tokio::test]
@@ -235,8 +259,13 @@ async fn register_json_schema_valid_succeeds() {
     let subject = format!("json-reg-{}", uuid::Uuid::new_v4());
 
     let id = common::api::register_schema_with_type(
-        &client, &base, &subject, common::JSON_SCHEMA_V1, "JSON",
-    ).await;
+        &client,
+        &base,
+        &subject,
+        common::JSON_SCHEMA_V1,
+        "JSON",
+    )
+    .await;
     assert!(id > 0);
 }
 
@@ -264,8 +293,13 @@ async fn register_json_schema_retrieve_includes_type() {
     let subject = format!("json-type-{}", uuid::Uuid::new_v4());
 
     let id = common::api::register_schema_with_type(
-        &client, &base, &subject, common::JSON_SCHEMA_V1, "JSON",
-    ).await;
+        &client,
+        &base,
+        &subject,
+        common::JSON_SCHEMA_V1,
+        "JSON",
+    )
+    .await;
 
     let resp = common::api::get_schema_by_id(&client, &base, id).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -281,11 +315,21 @@ async fn register_json_schema_idempotent_returns_same_id() {
     let subject = format!("json-idem-{}", uuid::Uuid::new_v4());
 
     let id1 = common::api::register_schema_with_type(
-        &client, &base, &subject, common::JSON_SCHEMA_V1, "JSON",
-    ).await;
+        &client,
+        &base,
+        &subject,
+        common::JSON_SCHEMA_V1,
+        "JSON",
+    )
+    .await;
     let id2 = common::api::register_schema_with_type(
-        &client, &base, &subject, common::JSON_SCHEMA_V1, "JSON",
-    ).await;
+        &client,
+        &base,
+        &subject,
+        common::JSON_SCHEMA_V1,
+        "JSON",
+    )
+    .await;
     assert_eq!(id1, id2);
 }
 
@@ -296,8 +340,13 @@ async fn register_json_schema_listed_under_versions() {
     let subject = format!("json-ver-{}", uuid::Uuid::new_v4());
 
     common::api::register_schema_with_type(
-        &client, &base, &subject, common::JSON_SCHEMA_V1, "JSON",
-    ).await;
+        &client,
+        &base,
+        &subject,
+        common::JSON_SCHEMA_V1,
+        "JSON",
+    )
+    .await;
 
     let versions = common::api::list_versions(&client, &base, &subject, common::ACTIVE_ONLY).await;
     assert_eq!(versions, vec![1]);
@@ -315,16 +364,27 @@ async fn register_json_schema_reordered_keys_deduplicates_with_normalize() {
     let resp1 = client
         .post(format!("{base}/subjects/{subject}/versions?normalize=true"))
         .json(&serde_json::json!({"schema": schema_a, "schemaType": "JSON"}))
-        .send().await.unwrap();
-    let id1 = resp1.json::<serde_json::Value>().await.unwrap()["id"].as_i64().unwrap();
+        .send()
+        .await
+        .unwrap();
+    let id1 = resp1.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_i64()
+        .unwrap();
 
     let resp2 = client
         .post(format!("{base}/subjects/{subject}/versions?normalize=true"))
         .json(&serde_json::json!({"schema": schema_b, "schemaType": "JSON"}))
-        .send().await.unwrap();
-    let id2 = resp2.json::<serde_json::Value>().await.unwrap()["id"].as_i64().unwrap();
+        .send()
+        .await
+        .unwrap();
+    let id2 = resp2.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_i64()
+        .unwrap();
 
-    assert_eq!(id1, id2, "normalize=true should deduplicate reordered JSON keys");
+    assert_eq!(
+        id1, id2,
+        "normalize=true should deduplicate reordered JSON keys"
+    );
 }
 
 #[tokio::test]
@@ -336,10 +396,15 @@ async fn register_json_schema_reordered_keys_creates_new_version_without_normali
     let schema_a = r#"{"type":"object","properties":{"name":{"type":"string"}}}"#;
     let schema_b = r#"{"properties":{"name":{"type":"string"}},"type":"object"}"#;
 
-    let id1 = common::api::register_schema_with_type(&client, &base, &subject, schema_a, "JSON").await;
-    let id2 = common::api::register_schema_with_type(&client, &base, &subject, schema_b, "JSON").await;
+    let id1 =
+        common::api::register_schema_with_type(&client, &base, &subject, schema_a, "JSON").await;
+    let id2 =
+        common::api::register_schema_with_type(&client, &base, &subject, schema_b, "JSON").await;
 
-    assert_ne!(id1, id2, "without normalize, different raw text should create separate versions");
+    assert_ne!(
+        id1, id2,
+        "without normalize, different raw text should create separate versions"
+    );
 }
 
 // -- Protobuf schema --
@@ -351,8 +416,13 @@ async fn register_protobuf_schema_valid_succeeds() {
     let subject = format!("proto-reg-{}", uuid::Uuid::new_v4());
 
     let id = common::api::register_schema_with_type(
-        &client, &base, &subject, common::PROTO_SCHEMA_V1, "PROTOBUF",
-    ).await;
+        &client,
+        &base,
+        &subject,
+        common::PROTO_SCHEMA_V1,
+        "PROTOBUF",
+    )
+    .await;
     assert!(id > 0);
 }
 
@@ -380,8 +450,13 @@ async fn register_protobuf_schema_retrieve_includes_type() {
     let subject = format!("proto-type-{}", uuid::Uuid::new_v4());
 
     let id = common::api::register_schema_with_type(
-        &client, &base, &subject, common::PROTO_SCHEMA_V1, "PROTOBUF",
-    ).await;
+        &client,
+        &base,
+        &subject,
+        common::PROTO_SCHEMA_V1,
+        "PROTOBUF",
+    )
+    .await;
 
     let resp = common::api::get_schema_by_id(&client, &base, id).await;
     assert_eq!(resp.status(), StatusCode::OK);
@@ -397,11 +472,21 @@ async fn register_protobuf_schema_idempotent_returns_same_id() {
     let subject = format!("proto-idem-{}", uuid::Uuid::new_v4());
 
     let id1 = common::api::register_schema_with_type(
-        &client, &base, &subject, common::PROTO_SCHEMA_V1, "PROTOBUF",
-    ).await;
+        &client,
+        &base,
+        &subject,
+        common::PROTO_SCHEMA_V1,
+        "PROTOBUF",
+    )
+    .await;
     let id2 = common::api::register_schema_with_type(
-        &client, &base, &subject, common::PROTO_SCHEMA_V1, "PROTOBUF",
-    ).await;
+        &client,
+        &base,
+        &subject,
+        common::PROTO_SCHEMA_V1,
+        "PROTOBUF",
+    )
+    .await;
     assert_eq!(id1, id2);
 }
 
@@ -412,8 +497,13 @@ async fn register_protobuf_schema_listed_under_versions() {
     let subject = format!("proto-ver-{}", uuid::Uuid::new_v4());
 
     common::api::register_schema_with_type(
-        &client, &base, &subject, common::PROTO_SCHEMA_V1, "PROTOBUF",
-    ).await;
+        &client,
+        &base,
+        &subject,
+        common::PROTO_SCHEMA_V1,
+        "PROTOBUF",
+    )
+    .await;
 
     let versions = common::api::list_versions(&client, &base, &subject, common::ACTIVE_ONLY).await;
     assert_eq!(versions, vec![1]);
@@ -433,7 +523,9 @@ async fn register_backward_incompatible_rejected() {
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::CONFLICT);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -451,7 +543,9 @@ async fn register_backward_compatible_succeeds() {
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V2}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
 }
@@ -465,14 +559,19 @@ async fn register_forward_incompatible_rejected() {
     // Set FORWARD mode. Register INCOMPAT (has required "email"), then try V1 (no "email").
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_INCOMPAT).await;
 
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "FORWARD"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V1}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
@@ -485,14 +584,19 @@ async fn register_full_backward_only_rejected() {
 
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
 
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "FULL"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
@@ -505,15 +609,21 @@ async fn register_none_mode_always_succeeds() {
 
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
 
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "NONE"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
-    let totally_different = r#"{"type":"record","name":"Different","fields":[{"name":"x","type":"string"}]}"#;
+    let totally_different =
+        r#"{"type":"record","name":"Different","fields":[{"name":"x","type":"string"}]}"#;
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": totally_different}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
 }
@@ -527,22 +637,29 @@ async fn register_backward_transitive_checks_all_versions() {
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V2).await;
 
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "BACKWARD_TRANSITIVE"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     // V3 is backward-compatible with V2 AND V1 → should pass.
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V3}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
     // INCOMPAT adds required "email" — incompatible with all → rejected.
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
 
@@ -554,14 +671,19 @@ async fn register_full_transitive_checks_both_directions() {
 
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
 
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "FULL_TRANSITIVE"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
 
@@ -574,7 +696,9 @@ async fn register_first_schema_always_succeeds() {
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V1}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
 }
@@ -585,12 +709,15 @@ async fn register_json_schema_enforcement() {
     let client = reqwest::Client::new();
     let subject = format!("compat-json-{}", uuid::Uuid::new_v4());
 
-    client.post(format!("{base}/subjects/{subject}/versions"))
+    client
+        .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({
             "schema": r#"{"type":"object","properties":{"name":{"type":"string"}}}"#,
             "schemaType": "JSON"
         }))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     // Narrowing type from string to integer is incompatible.
     let resp = client
@@ -599,7 +726,9 @@ async fn register_json_schema_enforcement() {
             "schema": r#"{"type":"object","properties":{"name":{"type":"integer"}}}"#,
             "schemaType": "JSON"
         }))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
@@ -613,14 +742,19 @@ async fn register_protobuf_enforcement() {
     let proto_v1 = r#"syntax = "proto3"; message Test { string name = 1; }"#;
     let proto_v2_incompat = r#"syntax = "proto3"; message Test { int32 name = 1; }"#;
 
-    client.post(format!("{base}/subjects/{subject}/versions"))
+    client
+        .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": proto_v1, "schemaType": "PROTOBUF"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": proto_v2_incompat, "schemaType": "PROTOBUF"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
@@ -640,28 +774,42 @@ async fn register_forward_transitive_checks_all_versions() {
     let schema3 = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f3"}]}"#;
 
     // Register with NONE first to set up the version chain.
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "NONE"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
-    client.post(format!("{base}/subjects/{subject}/versions"))
+    client
+        .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": schema1}))
-        .send().await.unwrap();
-    client.post(format!("{base}/subjects/{subject}/versions"))
+        .send()
+        .await
+        .unwrap();
+    client
+        .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": schema2}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     // Now switch to FORWARD_TRANSITIVE.
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "FORWARD_TRANSITIVE"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     // schema3 is forward-compatible with schema2 (latest) but NOT with schema1.
     // FORWARD_TRANSITIVE checks all → should reject.
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": schema3}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
@@ -680,33 +828,49 @@ async fn register_enforcement_skips_soft_deleted_versions() {
     // but NOT backward-compatible with wrongSchema2 (g changed string→int).
     let correct_schema2 = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"int","name":"g","default":0}]}"#;
 
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "BACKWARD"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
-    client.post(format!("{base}/subjects/{subject}/versions"))
+    client
+        .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": schema1}))
-        .send().await.unwrap();
-    client.post(format!("{base}/subjects/{subject}/versions"))
+        .send()
+        .await
+        .unwrap();
+    client
+        .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": wrong_schema2}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     // correctSchema2 is incompatible with wrongSchema2 (latest) → rejected.
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": correct_schema2}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 
     // Soft-delete wrongSchema2 (version 2).
-    client.delete(format!("{base}/subjects/{subject}/versions/2"))
-        .send().await.unwrap();
+    client
+        .delete(format!("{base}/subjects/{subject}/versions/2"))
+        .send()
+        .await
+        .unwrap();
 
     // Now latest active is schema1. correctSchema2 is backward-compatible with schema1 → succeeds.
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": correct_schema2}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -723,18 +887,25 @@ async fn register_level_change_to_none_allows_incompatible() {
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 
     // Change to NONE on the subject — same schema now succeeds.
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "NONE"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
@@ -754,33 +925,49 @@ async fn register_level_change_forward_to_backward() {
     let schema3_with_default = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2"},{"type":"string","name":"f3","default":"foo"}]}"#;
 
     // Set FORWARD and register schema1 + schema2.
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "FORWARD"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
-    client.post(format!("{base}/subjects/{subject}/versions"))
+    client
+        .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": schema1}))
-        .send().await.unwrap();
-    client.post(format!("{base}/subjects/{subject}/versions"))
+        .send()
+        .await
+        .unwrap();
+    client
+        .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": schema2}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     // Switch to BACKWARD.
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "BACKWARD"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     // schema3 without default is forward-compatible but NOT backward-compatible → rejected.
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": schema3_no_default}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 
     // schema3 with default IS backward-compatible → succeeds.
     let resp = client
         .post(format!("{base}/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": schema3_with_default}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }

@@ -34,5 +34,8 @@ fn config_database_url_required() {
         .extract()
         .expect("defaults should parse");
 
-    assert!(cfg.database_url.is_empty(), "default database_url should be empty");
+    assert!(
+        cfg.database_url.is_empty(),
+        "default database_url should be empty"
+    );
 }

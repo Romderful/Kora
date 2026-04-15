@@ -23,7 +23,10 @@ pub async fn list_subjects(
     limit: i64,
 ) -> Result<Vec<String>, sqlx::Error> {
     let like_pattern = prefix.filter(|p| !p.is_empty()).map(|p| {
-        let escaped = p.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let escaped = p
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
         format!("{escaped}%")
     });
 
@@ -169,7 +172,11 @@ pub async fn hard_delete_subject(pool: &PgPool, name: &str) -> Result<Vec<i32>, 
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn find_subject_id_by_name(pool: &PgPool, name: &str, include_deleted: bool) -> Result<Option<i64>, sqlx::Error> {
+pub async fn find_subject_id_by_name(
+    pool: &PgPool,
+    name: &str,
+    include_deleted: bool,
+) -> Result<Option<i64>, sqlx::Error> {
     sqlx::query_scalar::<_, i64>(
         "SELECT id FROM subjects WHERE name = $1 AND (deleted = false OR $2)",
     )
@@ -184,7 +191,11 @@ pub async fn find_subject_id_by_name(pool: &PgPool, name: &str, include_deleted:
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn subject_exists(pool: &PgPool, name: &str, include_deleted: bool) -> Result<bool, sqlx::Error> {
+pub async fn subject_exists(
+    pool: &PgPool,
+    name: &str,
+    include_deleted: bool,
+) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(SELECT 1 FROM subjects WHERE name = $1 AND (deleted = false OR $2))",
     )

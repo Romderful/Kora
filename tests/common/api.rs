@@ -75,7 +75,12 @@ pub async fn get_schema_by_id(client: &Client, base: &str, id: i64) -> Response 
 }
 
 /// Retrieve a schema by subject and version (version can be a number or "latest").
-pub async fn get_schema_by_version(client: &Client, base: &str, subject: &str, version: &str) -> Response {
+pub async fn get_schema_by_version(
+    client: &Client,
+    base: &str,
+    subject: &str,
+    version: &str,
+) -> Response {
     client
         .get(format!("{base}/subjects/{subject}/versions/{version}"))
         .send()
@@ -96,7 +101,12 @@ pub async fn list_subjects(client: &Client, base: &str, include_deleted: bool) -
 }
 
 /// List versions for a subject, optionally including soft-deleted ones.
-pub async fn list_versions(client: &Client, base: &str, subject: &str, include_deleted: bool) -> Vec<i32> {
+pub async fn list_versions(
+    client: &Client,
+    base: &str,
+    subject: &str,
+    include_deleted: bool,
+) -> Vec<i32> {
     let url = if include_deleted {
         format!("{base}/subjects/{subject}/versions?deleted=true")
     } else {
@@ -135,9 +145,16 @@ pub async fn hard_delete_subject(client: &Client, base: &str, subject: &str) -> 
 }
 
 /// Hard-delete a single schema version (must be soft-deleted first).
-pub async fn hard_delete_version(client: &Client, base: &str, subject: &str, version: i32) -> Response {
+pub async fn hard_delete_version(
+    client: &Client,
+    base: &str,
+    subject: &str,
+    version: i32,
+) -> Response {
     client
-        .delete(format!("{base}/subjects/{subject}/versions/{version}?permanent=true"))
+        .delete(format!(
+            "{base}/subjects/{subject}/versions/{version}?permanent=true"
+        ))
         .send()
         .await
         .unwrap()
@@ -175,7 +192,9 @@ pub async fn test_compatibility(
     schema_type: &str,
 ) -> Response {
     client
-        .post(format!("{base}/compatibility/subjects/{subject}/versions/{version}"))
+        .post(format!(
+            "{base}/compatibility/subjects/{subject}/versions/{version}"
+        ))
         .json(&serde_json::json!({"schema": schema, "schemaType": schema_type}))
         .send()
         .await
@@ -206,7 +225,11 @@ pub async fn get_global_compatibility(client: &Client, base: &str) -> Response {
 }
 
 /// Set the global compatibility level.
-pub async fn set_global_compatibility(client: &Client, base: &str, compatibility: &str) -> Response {
+pub async fn set_global_compatibility(
+    client: &Client,
+    base: &str,
+    compatibility: &str,
+) -> Response {
     client
         .put(format!("{base}/config"))
         .json(&serde_json::json!({"compatibility": compatibility}))
@@ -225,7 +248,12 @@ pub async fn get_subject_compatibility(client: &Client, base: &str, subject: &st
 }
 
 /// Set the per-subject compatibility level.
-pub async fn set_subject_compatibility(client: &Client, base: &str, subject: &str, compatibility: &str) -> Response {
+pub async fn set_subject_compatibility(
+    client: &Client,
+    base: &str,
+    subject: &str,
+    compatibility: &str,
+) -> Response {
     client
         .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": compatibility}))

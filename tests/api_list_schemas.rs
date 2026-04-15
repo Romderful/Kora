@@ -19,10 +19,13 @@ async fn list_schemas_returns_all_versions() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
-    let our: Vec<_> = body.iter().filter(|v| {
-        let subj = v["subject"].as_str().unwrap_or("");
-        subj == s1 || subj == s2
-    }).collect();
+    let our: Vec<_> = body
+        .iter()
+        .filter(|v| {
+            let subj = v["subject"].as_str().unwrap_or("");
+            subj == s1 || subj == s2
+        })
+        .collect();
 
     // s1 has 2 versions, s2 has 1 = 3 total.
     assert_eq!(our.len(), 3);
@@ -43,8 +46,13 @@ async fn list_schemas_empty_returns_empty_array() {
 
     // Use a prefix that won't match any schema.
     let resp = client
-        .get(format!("{base}/schemas?subjectPrefix=zzzz-no-match-{}", uuid::Uuid::new_v4()))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/schemas?subjectPrefix=zzzz-no-match-{}",
+            uuid::Uuid::new_v4()
+        ))
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
@@ -64,7 +72,9 @@ async fn list_schemas_subject_prefix_filters() {
 
     let resp = client
         .get(format!("{base}/schemas?subjectPrefix=prefix-orders-{uid}"))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
 
     assert_eq!(body.len(), 1);
@@ -82,11 +92,19 @@ async fn list_schemas_latest_only() {
     common::api::register_schema(&client, &base, &s1, common::AVRO_SCHEMA_V2).await;
 
     let resp = client
-        .get(format!("{base}/schemas?latestOnly=true&subjectPrefix=latest-only-{uid}"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/schemas?latestOnly=true&subjectPrefix=latest-only-{uid}"
+        ))
+        .send()
+        .await
+        .unwrap();
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
 
-    assert_eq!(body.len(), 1, "latestOnly should return 1 entry per subject");
+    assert_eq!(
+        body.len(),
+        1,
+        "latestOnly should return 1 entry per subject"
+    );
     assert_eq!(body[0]["version"], 2, "should return the latest version");
 }
 
@@ -104,15 +122,21 @@ async fn list_schemas_deleted_includes_soft_deleted() {
     // Without deleted → only version 1.
     let resp = client
         .get(format!("{base}/schemas?subjectPrefix=del-list-{uid}"))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
     assert_eq!(body.len(), 1);
     assert_eq!(body[0]["version"], 1);
 
     // With deleted=true → both versions.
     let resp = client
-        .get(format!("{base}/schemas?deleted=true&subjectPrefix=del-list-{uid}"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/schemas?deleted=true&subjectPrefix=del-list-{uid}"
+        ))
+        .send()
+        .await
+        .unwrap();
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
     assert_eq!(body.len(), 2);
 }
@@ -130,8 +154,12 @@ async fn list_schemas_deleted_and_latest_only() {
 
     // latestOnly + deleted=true → version 2 (soft-deleted, but it's the latest).
     let resp = client
-        .get(format!("{base}/schemas?deleted=true&latestOnly=true&subjectPrefix=del-latest-{uid}"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/schemas?deleted=true&latestOnly=true&subjectPrefix=del-latest-{uid}"
+        ))
+        .send()
+        .await
+        .unwrap();
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
     assert_eq!(body.len(), 1);
     assert_eq!(body[0]["version"], 2);
@@ -150,8 +178,12 @@ async fn list_schemas_pagination() {
 
     // offset=1, limit=1 → should return exactly 1 result (version 2).
     let resp = client
-        .get(format!("{base}/schemas?subjectPrefix=page-{uid}&offset=1&limit=1"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/schemas?subjectPrefix=page-{uid}&offset=1&limit=1"
+        ))
+        .send()
+        .await
+        .unwrap();
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
     assert_eq!(body.len(), 1);
     assert_eq!(body[0]["version"], 2);
@@ -166,18 +198,24 @@ async fn list_schemas_omits_schema_type_for_avro() {
     let s_json = format!("type-json-{uid}");
 
     common::api::register_schema(&client, &base, &s_avro, common::AVRO_SCHEMA_V1).await;
-    common::api::register_schema_with_type(&client, &base, &s_json, common::JSON_SCHEMA_V1, "JSON").await;
+    common::api::register_schema_with_type(&client, &base, &s_json, common::JSON_SCHEMA_V1, "JSON")
+        .await;
 
     let resp = client
         .get(format!("{base}/schemas?subjectPrefix=type-"))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
 
     let avro_entry = body.iter().find(|v| v["subject"] == s_avro).unwrap();
     let json_entry = body.iter().find(|v| v["subject"] == s_json).unwrap();
 
     assert_eq!(avro_entry["schemaType"], "AVRO");
-    assert_eq!(json_entry["schemaType"], "JSON", "schemaType should be present for JSON");
+    assert_eq!(
+        json_entry["schemaType"], "JSON",
+        "schemaType should be present for JSON"
+    );
 }
 
 #[tokio::test]
@@ -195,7 +233,9 @@ async fn list_schemas_like_metacharacter_escaping() {
     // Prefix "meta_100%" should match s1 but not s2.
     let resp = client
         .get(format!("{base}/schemas?subjectPrefix=meta_100%25-{uid}"))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     let body: Vec<serde_json::Value> = resp.json().await.unwrap();
 
     assert_eq!(body.len(), 1);

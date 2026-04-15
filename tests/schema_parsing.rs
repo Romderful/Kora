@@ -8,26 +8,50 @@ use kora::schema::{self, SchemaFormat};
 
 #[test]
 fn format_default_is_avro() {
-    assert_eq!(SchemaFormat::from_optional(None).unwrap(), SchemaFormat::Avro);
+    assert_eq!(
+        SchemaFormat::from_optional(None).unwrap(),
+        SchemaFormat::Avro
+    );
 }
 
 #[test]
 fn format_avro_accepted() {
-    assert_eq!(SchemaFormat::from_optional(Some("AVRO")).unwrap(), SchemaFormat::Avro);
-    assert_eq!(SchemaFormat::from_optional(Some("avro")).unwrap(), SchemaFormat::Avro);
-    assert_eq!(SchemaFormat::from_optional(Some("Avro")).unwrap(), SchemaFormat::Avro);
+    assert_eq!(
+        SchemaFormat::from_optional(Some("AVRO")).unwrap(),
+        SchemaFormat::Avro
+    );
+    assert_eq!(
+        SchemaFormat::from_optional(Some("avro")).unwrap(),
+        SchemaFormat::Avro
+    );
+    assert_eq!(
+        SchemaFormat::from_optional(Some("Avro")).unwrap(),
+        SchemaFormat::Avro
+    );
 }
 
 #[test]
 fn format_json_accepted() {
-    assert_eq!(SchemaFormat::from_optional(Some("JSON")).unwrap(), SchemaFormat::Json);
-    assert_eq!(SchemaFormat::from_optional(Some("json")).unwrap(), SchemaFormat::Json);
+    assert_eq!(
+        SchemaFormat::from_optional(Some("JSON")).unwrap(),
+        SchemaFormat::Json
+    );
+    assert_eq!(
+        SchemaFormat::from_optional(Some("json")).unwrap(),
+        SchemaFormat::Json
+    );
 }
 
 #[test]
 fn format_protobuf_accepted() {
-    assert_eq!(SchemaFormat::from_optional(Some("PROTOBUF")).unwrap(), SchemaFormat::Protobuf);
-    assert_eq!(SchemaFormat::from_optional(Some("protobuf")).unwrap(), SchemaFormat::Protobuf);
+    assert_eq!(
+        SchemaFormat::from_optional(Some("PROTOBUF")).unwrap(),
+        SchemaFormat::Protobuf
+    );
+    assert_eq!(
+        SchemaFormat::from_optional(Some("protobuf")).unwrap(),
+        SchemaFormat::Protobuf
+    );
 }
 
 #[test]
@@ -118,14 +142,26 @@ fn json_fingerprint_is_stable() {
 #[test]
 fn json_different_schemas_have_different_fingerprints() {
     let a = schema::parse(SchemaFormat::Json, common::JSON_SCHEMA_V1).unwrap();
-    let b = schema::parse(SchemaFormat::Json, r#"{"type":"array","items":{"type":"integer"}}"#).unwrap();
+    let b = schema::parse(
+        SchemaFormat::Json,
+        r#"{"type":"array","items":{"type":"integer"}}"#,
+    )
+    .unwrap();
     assert_ne!(a.fingerprint, b.fingerprint);
 }
 
 #[test]
 fn json_canonical_form_sorts_keys() {
-    let a = schema::parse(SchemaFormat::Json, r#"{"properties":{"name":{"type":"string"}},"type":"object"}"#).unwrap();
-    let b = schema::parse(SchemaFormat::Json, r#"{"type":"object","properties":{"name":{"type":"string"}}}"#).unwrap();
+    let a = schema::parse(
+        SchemaFormat::Json,
+        r#"{"properties":{"name":{"type":"string"}},"type":"object"}"#,
+    )
+    .unwrap();
+    let b = schema::parse(
+        SchemaFormat::Json,
+        r#"{"type":"object","properties":{"name":{"type":"string"}}}"#,
+    )
+    .unwrap();
     assert_eq!(a.canonical_form, b.canonical_form);
     assert_eq!(a.fingerprint, b.fingerprint);
 }

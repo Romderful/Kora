@@ -11,7 +11,10 @@ use sqlx::PgPool;
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn get_subject_level(pool: &PgPool, subject: &str) -> Result<Option<String>, sqlx::Error> {
+pub async fn get_subject_level(
+    pool: &PgPool,
+    subject: &str,
+) -> Result<Option<String>, sqlx::Error> {
     sqlx::query_scalar::<_, String>(
         "SELECT compatibility_level FROM config WHERE subject = $1 AND compatibility_level IS NOT NULL",
     )
@@ -38,7 +41,11 @@ pub async fn get_global_level(pool: &PgPool) -> Result<String, sqlx::Error> {
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn set_global_level(pool: &PgPool, level: &str, normalize: bool) -> Result<String, sqlx::Error> {
+pub async fn set_global_level(
+    pool: &PgPool,
+    level: &str,
+    normalize: bool,
+) -> Result<String, sqlx::Error> {
     sqlx::query_scalar::<_, String>(
         r"UPDATE config SET compatibility_level = $1, normalize = $2, updated_at = now()
           WHERE subject IS NULL
@@ -81,7 +88,10 @@ pub async fn set_subject_level(
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn delete_subject_level(pool: &PgPool, subject: &str) -> Result<Option<(String, bool)>, sqlx::Error> {
+pub async fn delete_subject_level(
+    pool: &PgPool,
+    subject: &str,
+) -> Result<Option<(String, bool)>, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
     let row = sqlx::query(
@@ -139,7 +149,10 @@ pub async fn get_global_normalize(pool: &PgPool) -> Result<bool, sqlx::Error> {
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn get_subject_normalize(pool: &PgPool, subject: &str) -> Result<Option<bool>, sqlx::Error> {
+pub async fn get_subject_normalize(
+    pool: &PgPool,
+    subject: &str,
+) -> Result<Option<bool>, sqlx::Error> {
     sqlx::query_scalar::<_, bool>(
         "SELECT COALESCE(normalize, false) FROM config WHERE subject = $1 AND compatibility_level IS NOT NULL",
     )
@@ -165,7 +178,10 @@ pub async fn get_effective_normalize(pool: &PgPool, subject: &str) -> Result<boo
 /// # Errors
 ///
 /// Returns a database error on connection failure.
-pub async fn get_effective_compatibility(pool: &PgPool, subject: &str) -> Result<String, sqlx::Error> {
+pub async fn get_effective_compatibility(
+    pool: &PgPool,
+    subject: &str,
+) -> Result<String, sqlx::Error> {
     if let Some(level) = get_subject_level(pool, subject).await? {
         return Ok(level);
     }

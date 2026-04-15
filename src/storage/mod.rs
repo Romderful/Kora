@@ -6,8 +6,8 @@ pub mod references;
 pub mod schemas;
 pub mod subjects;
 
-use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 
 // -- Pool --
 

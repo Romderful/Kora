@@ -2,8 +2,8 @@
 
 use sqlx::PgPool;
 
-use crate::types::SchemaReference;
 use crate::error::KoraError;
+use crate::types::SchemaReference;
 
 // -- Queries --
 
@@ -13,10 +13,7 @@ use crate::error::KoraError;
 ///
 /// Returns `KoraError::ReferenceNotFound` if any referenced subject/version
 /// does not exist or is soft-deleted.
-pub async fn validate_references(
-    pool: &PgPool,
-    refs: &[SchemaReference],
-) -> Result<(), KoraError> {
+pub async fn validate_references(pool: &PgPool, refs: &[SchemaReference]) -> Result<(), KoraError> {
     for r in refs {
         let exists = sqlx::query_scalar::<_, bool>(
             r"SELECT EXISTS(

@@ -25,10 +25,9 @@ struct TestCase {
 
 fn load_cases(filename: &str) -> Vec<TestCase> {
     let path = format!("tests/fixtures/confluent/{filename}");
-    let data = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
-    serde_json::from_str(&data)
-        .unwrap_or_else(|e| panic!("Failed to parse {path}: {e}"))
+    let data =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {path}: {e}"));
+    serde_json::from_str(&data).unwrap_or_else(|e| panic!("Failed to parse {path}: {e}"))
 }
 
 fn run_cases(filename: &str) {
@@ -197,8 +196,14 @@ fn confluent_circular_ref_2_branches() {
     let elapsed = start.elapsed();
 
     assert!(result.is_ok(), "circular ref should not crash");
-    assert!(result.unwrap().is_compatible, "identical schemas should be compatible");
-    assert!(elapsed.as_secs() < 5, "should complete quickly, took {elapsed:?}");
+    assert!(
+        result.unwrap().is_compatible,
+        "identical schemas should be compatible"
+    );
+    assert!(
+        elapsed.as_secs() < 5,
+        "should complete quickly, took {elapsed:?}"
+    );
 }
 
 #[test]
@@ -213,6 +218,12 @@ fn confluent_circular_ref_12_branches_x5_props() {
     let elapsed = start.elapsed();
 
     assert!(result.is_ok(), "complex circular ref should not crash");
-    assert!(result.unwrap().is_compatible, "identical schemas should be compatible");
-    assert!(elapsed.as_secs() < 10, "should complete within 10s, took {elapsed:?}");
+    assert!(
+        result.unwrap().is_compatible,
+        "identical schemas should be compatible"
+    );
+    assert!(
+        elapsed.as_secs() < 10,
+        "should complete within 10s, took {elapsed:?}"
+    );
 }

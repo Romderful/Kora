@@ -22,7 +22,14 @@ async fn register_schema_with_valid_ref_succeeds() {
     let refs = serde_json::json!([
         {"name": "Base", "subject": ref_subject, "version": 1}
     ]);
-    let resp = common::api::register_schema_with_refs(&client, &base, &dep_subject, &common::unique_avro_schema(), &refs).await;
+    let resp = common::api::register_schema_with_refs(
+        &client,
+        &base,
+        &dep_subject,
+        &common::unique_avro_schema(),
+        &refs,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -35,7 +42,8 @@ async fn register_schema_without_refs_succeeds() {
     let client = reqwest::Client::new();
     let subject = format!("ref-norefs-{}", uuid::Uuid::new_v4());
 
-    let id = common::api::register_schema(&client, &base, &subject, &common::unique_avro_schema()).await;
+    let id =
+        common::api::register_schema(&client, &base, &subject, &common::unique_avro_schema()).await;
     assert!(id > 0);
 }
 
@@ -50,7 +58,14 @@ async fn register_schema_ref_nonexistent_subject_returns_422() {
     let refs = serde_json::json!([
         {"name": "Missing", "subject": "nonexistent-subject", "version": 1}
     ]);
-    let resp = common::api::register_schema_with_refs(&client, &base, &subject, &common::unique_avro_schema(), &refs).await;
+    let resp = common::api::register_schema_with_refs(
+        &client,
+        &base,
+        &subject,
+        &common::unique_avro_schema(),
+        &refs,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -71,7 +86,14 @@ async fn register_schema_ref_nonexistent_version_returns_422() {
     let refs = serde_json::json!([
         {"name": "Base", "subject": ref_subject, "version": 99}
     ]);
-    let resp = common::api::register_schema_with_refs(&client, &base, &dep_subject, &common::unique_avro_schema(), &refs).await;
+    let resp = common::api::register_schema_with_refs(
+        &client,
+        &base,
+        &dep_subject,
+        &common::unique_avro_schema(),
+        &refs,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -92,7 +114,14 @@ async fn hard_delete_version_referenced_returns_422() {
     let refs = serde_json::json!([
         {"name": "Base", "subject": ref_subject, "version": 1}
     ]);
-    common::api::register_schema_with_refs(&client, &base, &dep_subject, &common::unique_avro_schema(), &refs).await;
+    common::api::register_schema_with_refs(
+        &client,
+        &base,
+        &dep_subject,
+        &common::unique_avro_schema(),
+        &refs,
+    )
+    .await;
 
     // Soft-delete the referenced version first (required before hard-delete).
     common::api::delete_version(&client, &base, &ref_subject, "1").await;
@@ -131,7 +160,14 @@ async fn hard_delete_subject_with_ref_version_returns_422() {
     let refs = serde_json::json!([
         {"name": "Base", "subject": ref_subject, "version": 1}
     ]);
-    common::api::register_schema_with_refs(&client, &base, &dep_subject, &common::unique_avro_schema(), &refs).await;
+    common::api::register_schema_with_refs(
+        &client,
+        &base,
+        &dep_subject,
+        &common::unique_avro_schema(),
+        &refs,
+    )
+    .await;
 
     // Soft-delete the subject first.
     common::api::delete_subject(&client, &base, &ref_subject).await;
@@ -156,7 +192,14 @@ async fn hard_delete_dependent_then_referenced_succeeds() {
     let refs = serde_json::json!([
         {"name": "Base", "subject": ref_subject, "version": 1}
     ]);
-    common::api::register_schema_with_refs(&client, &base, &dep_subject, &common::unique_avro_schema(), &refs).await;
+    common::api::register_schema_with_refs(
+        &client,
+        &base,
+        &dep_subject,
+        &common::unique_avro_schema(),
+        &refs,
+    )
+    .await;
 
     // Hard-delete the dependent first (soft-delete → hard-delete).
     common::api::delete_subject(&client, &base, &dep_subject).await;
@@ -181,7 +224,14 @@ async fn soft_delete_version_referenced_succeeds() {
     let refs = serde_json::json!([
         {"name": "Base", "subject": ref_subject, "version": 1}
     ]);
-    common::api::register_schema_with_refs(&client, &base, &dep_subject, &common::unique_avro_schema(), &refs).await;
+    common::api::register_schema_with_refs(
+        &client,
+        &base,
+        &dep_subject,
+        &common::unique_avro_schema(),
+        &refs,
+    )
+    .await;
 
     // Soft-delete should work — only hard-delete is blocked.
     let resp = common::api::delete_version(&client, &base, &ref_subject, "1").await;
@@ -200,13 +250,24 @@ async fn referencedby_returns_referencing_schema_ids() {
     common::api::register_schema(&client, &base, &ref_subject, &common::unique_avro_schema()).await;
     let refs = serde_json::json!([{"name": "Base", "subject": ref_subject, "version": 1}]);
     let resp = common::api::register_schema_with_refs(
-        &client, &base, &dep_subject, &common::unique_avro_schema(), &refs,
-    ).await;
-    let dep_id = resp.json::<serde_json::Value>().await.unwrap()["id"].as_i64().unwrap();
+        &client,
+        &base,
+        &dep_subject,
+        &common::unique_avro_schema(),
+        &refs,
+    )
+    .await;
+    let dep_id = resp.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_i64()
+        .unwrap();
 
     let resp = client
-        .get(format!("{base}/subjects/{ref_subject}/versions/1/referencedby"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/subjects/{ref_subject}/versions/1/referencedby"
+        ))
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
     let ids: Vec<i64> = resp.json().await.unwrap();
@@ -223,7 +284,9 @@ async fn referencedby_no_dependents_returns_empty() {
 
     let resp = client
         .get(format!("{base}/subjects/{subject}/versions/1/referencedby"))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
     let ids: Vec<i64> = resp.json().await.unwrap();
@@ -242,18 +305,36 @@ async fn referencedby_multiple_dependents() {
     let refs = serde_json::json!([{"name": "Base", "subject": ref_subject, "version": 1}]);
 
     let resp = common::api::register_schema_with_refs(
-        &client, &base, &dep1, &common::unique_avro_schema(), &refs,
-    ).await;
-    let dep1_id = resp.json::<serde_json::Value>().await.unwrap()["id"].as_i64().unwrap();
+        &client,
+        &base,
+        &dep1,
+        &common::unique_avro_schema(),
+        &refs,
+    )
+    .await;
+    let dep1_id = resp.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_i64()
+        .unwrap();
 
     let resp = common::api::register_schema_with_refs(
-        &client, &base, &dep2, &common::unique_avro_schema(), &refs,
-    ).await;
-    let dep2_id = resp.json::<serde_json::Value>().await.unwrap()["id"].as_i64().unwrap();
+        &client,
+        &base,
+        &dep2,
+        &common::unique_avro_schema(),
+        &refs,
+    )
+    .await;
+    let dep2_id = resp.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_i64()
+        .unwrap();
 
     let resp = client
-        .get(format!("{base}/subjects/{ref_subject}/versions/1/referencedby"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/subjects/{ref_subject}/versions/1/referencedby"
+        ))
+        .send()
+        .await
+        .unwrap();
 
     let ids: Vec<i64> = resp.json().await.unwrap();
     assert!(ids.contains(&dep1_id));
@@ -271,16 +352,28 @@ async fn referencedby_excludes_soft_deleted_by_default() {
     common::api::register_schema(&client, &base, &ref_subject, &common::unique_avro_schema()).await;
     let refs = serde_json::json!([{"name": "Base", "subject": ref_subject, "version": 1}]);
     common::api::register_schema_with_refs(
-        &client, &base, &dep_subject, &common::unique_avro_schema(), &refs,
-    ).await;
+        &client,
+        &base,
+        &dep_subject,
+        &common::unique_avro_schema(),
+        &refs,
+    )
+    .await;
     common::api::delete_version(&client, &base, &dep_subject, "1").await;
 
     let resp = client
-        .get(format!("{base}/subjects/{ref_subject}/versions/1/referencedby"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/subjects/{ref_subject}/versions/1/referencedby"
+        ))
+        .send()
+        .await
+        .unwrap();
 
     let ids: Vec<i64> = resp.json().await.unwrap();
-    assert!(ids.is_empty(), "soft-deleted referencing schema should be excluded by default");
+    assert!(
+        ids.is_empty(),
+        "soft-deleted referencing schema should be excluded by default"
+    );
 }
 
 #[tokio::test]
@@ -293,17 +386,31 @@ async fn referencedby_includes_soft_deleted_with_param() {
     common::api::register_schema(&client, &base, &ref_subject, &common::unique_avro_schema()).await;
     let refs = serde_json::json!([{"name": "Base", "subject": ref_subject, "version": 1}]);
     let resp = common::api::register_schema_with_refs(
-        &client, &base, &dep_subject, &common::unique_avro_schema(), &refs,
-    ).await;
-    let dep_id = resp.json::<serde_json::Value>().await.unwrap()["id"].as_i64().unwrap();
+        &client,
+        &base,
+        &dep_subject,
+        &common::unique_avro_schema(),
+        &refs,
+    )
+    .await;
+    let dep_id = resp.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_i64()
+        .unwrap();
     common::api::delete_version(&client, &base, &dep_subject, "1").await;
 
     let resp = client
-        .get(format!("{base}/subjects/{ref_subject}/versions/1/referencedby?deleted=true"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/subjects/{ref_subject}/versions/1/referencedby?deleted=true"
+        ))
+        .send()
+        .await
+        .unwrap();
 
     let ids: Vec<i64> = resp.json().await.unwrap();
-    assert!(ids.contains(&dep_id), "soft-deleted should be included with deleted=true");
+    assert!(
+        ids.contains(&dep_id),
+        "soft-deleted should be included with deleted=true"
+    );
 }
 
 #[tokio::test]
@@ -318,13 +425,22 @@ async fn referencedby_pagination() {
     for i in 0..3 {
         let dep = format!("refby-page-dep{i}-{}", uuid::Uuid::new_v4());
         common::api::register_schema_with_refs(
-            &client, &base, &dep, &common::unique_avro_schema(), &refs,
-        ).await;
+            &client,
+            &base,
+            &dep,
+            &common::unique_avro_schema(),
+            &refs,
+        )
+        .await;
     }
 
     let resp = client
-        .get(format!("{base}/subjects/{ref_subject}/versions/1/referencedby?offset=1&limit=1"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/subjects/{ref_subject}/versions/1/referencedby?offset=1&limit=1"
+        ))
+        .send()
+        .await
+        .unwrap();
 
     let ids: Vec<i64> = resp.json().await.unwrap();
     assert_eq!(ids.len(), 1);
@@ -336,8 +452,12 @@ async fn referencedby_nonexistent_subject_returns_40401() {
     let client = reqwest::Client::new();
 
     let resp = client
-        .get(format!("{base}/subjects/nonexistent/versions/1/referencedby"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/subjects/nonexistent/versions/1/referencedby"
+        ))
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -353,8 +473,12 @@ async fn referencedby_nonexistent_version_returns_40402() {
     common::api::register_schema(&client, &base, &subject, &common::unique_avro_schema()).await;
 
     let resp = client
-        .get(format!("{base}/subjects/{subject}/versions/99/referencedby"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/subjects/{subject}/versions/99/referencedby"
+        ))
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -371,7 +495,9 @@ async fn referencedby_invalid_version_returns_42202() {
 
     let resp = client
         .get(format!("{base}/subjects/{subject}/versions/0/referencedby"))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let body: serde_json::Value = resp.json().await.unwrap();

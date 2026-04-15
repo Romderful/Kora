@@ -18,9 +18,13 @@ async fn compat_backward_compatible_returns_true() {
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
 
     let resp = client
-        .post(format!("{base}/compatibility/subjects/{subject}/versions/latest"))
+        .post(format!(
+            "{base}/compatibility/subjects/{subject}/versions/latest"
+        ))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V2}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -37,9 +41,13 @@ async fn compat_backward_incompatible_returns_false() {
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
 
     let resp = client
-        .post(format!("{base}/compatibility/subjects/{subject}/versions/latest"))
+        .post(format!(
+            "{base}/compatibility/subjects/{subject}/versions/latest"
+        ))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -58,14 +66,21 @@ async fn compat_forward_compatible_returns_true() {
     // FORWARD: old (V2) reads new (V1) data. V2 can read V1 — "name" has default → compatible.
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V2).await;
 
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "FORWARD"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     let resp = client
-        .post(format!("{base}/compatibility/subjects/{subject}/versions/latest"))
+        .post(format!(
+            "{base}/compatibility/subjects/{subject}/versions/latest"
+        ))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V1}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -87,14 +102,21 @@ async fn compat_forward_incompatible_returns_false() {
     // FORWARD: old(INCOMPAT) reads new(V1). INCOMPAT as reader requires "email" but V1 data has no "email" → incompatible.
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_INCOMPAT).await;
 
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "FORWARD"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     let resp = client
-        .post(format!("{base}/compatibility/subjects/{subject}/versions/latest"))
+        .post(format!(
+            "{base}/compatibility/subjects/{subject}/versions/latest"
+        ))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V1}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -111,18 +133,28 @@ async fn compat_full_requires_both_directions() {
 
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
 
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "FULL"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     // common::COMPAT_AVRO_INCOMPAT adds required "email" — backward-incompatible AND forward-incompatible.
     let resp = client
-        .post(format!("{base}/compatibility/subjects/{subject}/versions/latest"))
+        .post(format!(
+            "{base}/compatibility/subjects/{subject}/versions/latest"
+        ))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     let body: serde_json::Value = resp.json().await.unwrap();
-    assert_eq!(body["is_compatible"], false, "FULL mode should fail for incompatible schema");
+    assert_eq!(
+        body["is_compatible"], false,
+        "FULL mode should fail for incompatible schema"
+    );
 }
 
 #[tokio::test]
@@ -133,15 +165,23 @@ async fn compat_none_always_compatible() {
 
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
 
-    client.put(format!("{base}/config/{subject}"))
+    client
+        .put(format!("{base}/config/{subject}"))
         .json(&serde_json::json!({"compatibility": "NONE"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
-    let totally_different = r#"{"type":"record","name":"Different","fields":[{"name":"x","type":"string"}]}"#;
+    let totally_different =
+        r#"{"type":"record","name":"Different","fields":[{"name":"x","type":"string"}]}"#;
     let resp = client
-        .post(format!("{base}/compatibility/subjects/{subject}/versions/latest"))
+        .post(format!(
+            "{base}/compatibility/subjects/{subject}/versions/latest"
+        ))
         .json(&serde_json::json!({"schema": totally_different}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["is_compatible"], true);
@@ -158,14 +198,24 @@ async fn compat_verbose_returns_messages() {
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
 
     let resp = client
-        .post(format!("{base}/compatibility/subjects/{subject}/versions/latest?verbose=true"))
+        .post(format!(
+            "{base}/compatibility/subjects/{subject}/versions/latest?verbose=true"
+        ))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["is_compatible"], false);
-    assert!(body["messages"].is_array(), "verbose should include messages array");
-    assert!(!body["messages"].as_array().unwrap().is_empty(), "messages should not be empty for incompatible schema");
+    assert!(
+        body["messages"].is_array(),
+        "verbose should include messages array"
+    );
+    assert!(
+        !body["messages"].as_array().unwrap().is_empty(),
+        "messages should not be empty for incompatible schema"
+    );
 }
 
 // -- Test against specific version number --
@@ -181,9 +231,13 @@ async fn compat_test_against_specific_version() {
 
     // Test V3 against version 1 specifically (not "latest").
     let resp = client
-        .post(format!("{base}/compatibility/subjects/{subject}/versions/1"))
+        .post(format!(
+            "{base}/compatibility/subjects/{subject}/versions/1"
+        ))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V3}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -205,7 +259,9 @@ async fn compat_test_against_all_versions_incompatible() {
     let resp = client
         .post(format!("{base}/compatibility/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -225,7 +281,9 @@ async fn compat_test_against_all_versions() {
     let resp = client
         .post(format!("{base}/compatibility/subjects/{subject}/versions"))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V3}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -245,9 +303,13 @@ async fn compat_test_against_latest() {
 
     // Test V3 against "latest" (which is V2).
     let resp = client
-        .post(format!("{base}/compatibility/subjects/{subject}/versions/latest"))
+        .post(format!(
+            "{base}/compatibility/subjects/{subject}/versions/latest"
+        ))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V3}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -262,9 +324,13 @@ async fn compat_nonexistent_subject_returns_40401() {
     let client = reqwest::Client::new();
 
     let resp = client
-        .post(format!("{base}/compatibility/subjects/nonexistent/versions/latest"))
+        .post(format!(
+            "{base}/compatibility/subjects/nonexistent/versions/latest"
+        ))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V1}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -280,9 +346,13 @@ async fn compat_nonexistent_version_returns_40402() {
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
 
     let resp = client
-        .post(format!("{base}/compatibility/subjects/{subject}/versions/99"))
+        .post(format!(
+            "{base}/compatibility/subjects/{subject}/versions/99"
+        ))
         .json(&serde_json::json!({"schema": common::COMPAT_AVRO_V2}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     let body: serde_json::Value = resp.json().await.unwrap();
@@ -298,15 +368,18 @@ async fn compat_invalid_schema_returns_42201() {
     common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
 
     let resp = client
-        .post(format!("{base}/compatibility/subjects/{subject}/versions/latest"))
+        .post(format!(
+            "{base}/compatibility/subjects/{subject}/versions/latest"
+        ))
         .json(&serde_json::json!({"schema": "not valid json"}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
 
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error_code"], 42201);
 }
-
 
 // JSON Schema and Protobuf diff engine coverage is in:
 // - tests/confluent_json_schema_compat.rs (251 Confluent test cases)

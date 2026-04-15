@@ -153,8 +153,12 @@ pub fn check_compatibility(
 
     match format {
         SchemaFormat::Avro => avro::check_compatibility(new_schema, existing_schema, direction),
-        SchemaFormat::Json => json_schema::check_compatibility(new_schema, existing_schema, direction),
-        SchemaFormat::Protobuf => protobuf::check_compatibility(new_schema, existing_schema, direction),
+        SchemaFormat::Json => {
+            json_schema::check_compatibility(new_schema, existing_schema, direction)
+        }
+        SchemaFormat::Protobuf => {
+            protobuf::check_compatibility(new_schema, existing_schema, direction)
+        }
     }
 }
 
@@ -176,17 +180,26 @@ pub fn check_with_direction(
     match direction {
         CompatDirection::Backward => {
             let (ok, msgs) = diff_fn(existing_schema, new_schema)?;
-            Ok(CompatibilityResult { is_compatible: ok, messages: msgs })
+            Ok(CompatibilityResult {
+                is_compatible: ok,
+                messages: msgs,
+            })
         }
         CompatDirection::Forward => {
             let (ok, msgs) = diff_fn(new_schema, existing_schema)?;
-            Ok(CompatibilityResult { is_compatible: ok, messages: msgs })
+            Ok(CompatibilityResult {
+                is_compatible: ok,
+                messages: msgs,
+            })
         }
         CompatDirection::Full => {
             let (bw_ok, mut msgs) = diff_fn(existing_schema, new_schema)?;
             let (fw_ok, fw_msgs) = diff_fn(new_schema, existing_schema)?;
             msgs.extend(fw_msgs);
-            Ok(CompatibilityResult { is_compatible: bw_ok && fw_ok, messages: msgs })
+            Ok(CompatibilityResult {
+                is_compatible: bw_ok && fw_ok,
+                messages: msgs,
+            })
         }
         CompatDirection::None => Ok(CompatibilityResult {
             is_compatible: true,

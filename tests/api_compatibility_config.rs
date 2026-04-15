@@ -81,7 +81,11 @@ async fn get_global_compatibility_accepts_default_to_global_param() {
     let base = common::spawn_server().await;
     let client = Client::new();
 
-    let resp = client.get(format!("{base}/config?defaultToGlobal=true")).send().await.unwrap();
+    let resp = client
+        .get(format!("{base}/config?defaultToGlobal=true"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["compatibilityLevel"], "BACKWARD");
@@ -95,7 +99,11 @@ async fn delete_global_compatibility_resets_to_backward() {
 
     common::api::set_global_compatibility(&client, &base, "FULL").await;
 
-    let resp = client.delete(format!("{base}/config")).send().await.unwrap();
+    let resp = client
+        .delete(format!("{base}/config"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
     let resp = common::api::get_global_compatibility(&client, &base).await;
@@ -121,7 +129,11 @@ async fn get_subject_compatibility_without_config_returns_40408() {
     assert_eq!(body["error_code"], 40408);
 
     // With defaultToGlobal=true → falls back to global.
-    let resp = client.get(format!("{base}/config/{subject}?defaultToGlobal=true")).send().await.unwrap();
+    let resp = client
+        .get(format!("{base}/config/{subject}?defaultToGlobal=true"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["compatibilityLevel"], "BACKWARD");

@@ -241,7 +241,9 @@ fn is_false_schema_value(schema: &serde_json::Value) -> bool {
     schema == &serde_json::Value::Bool(false)
         || (schema.is_object()
             && schema.as_object().is_some_and(|m| m.len() == 1)
-            && schema.get("not").is_some_and(|n| n == &serde_json::json!({})))
+            && schema
+                .get("not")
+                .is_some_and(|n| n == &serde_json::json!({})))
 }
 
 /// JSON Schema `true` or `{}` — accepts everything.
@@ -274,7 +276,10 @@ fn combined_criterion(schema: &serde_json::Value) -> String {
 ///
 /// Confluent: if old can be found compatible with at least one subschema in new,
 /// the transition is `SUM_TYPE_EXTENDED` (compatible).
-fn compare_schema_to_combined(old: &serde_json::Value, new: &serde_json::Value) -> Vec<(DiffType, String)> {
+fn compare_schema_to_combined(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+) -> Vec<(DiffType, String)> {
     let compatible_set: HashSet<DiffType> = COMPATIBLE_CHANGES.iter().copied().collect();
 
     // allOf: old must be compatible with ALL subschemas (intersection semantics).
@@ -282,7 +287,10 @@ fn compare_schema_to_combined(old: &serde_json::Value, new: &serde_json::Value) 
         for sub in arr {
             let sub_diffs = compare(old, sub);
             if sub_diffs.iter().any(|(dt, _)| !compatible_set.contains(dt)) {
-                return vec![(DiffType::TypeChanged, "Schema changed to allOf type incompatibly".into())];
+                return vec![(
+                    DiffType::TypeChanged,
+                    "Schema changed to allOf type incompatibly".into(),
+                )];
             }
         }
         return vec![(DiffType::SumTypeExtended, "Schema widened to allOf".into())];
@@ -302,16 +310,26 @@ fn compare_schema_to_combined(old: &serde_json::Value, new: &serde_json::Value) 
         }
     }
 
-    vec![(DiffType::TypeChanged, "Schema changed to combined type incompatibly".into())]
+    vec![(
+        DiffType::TypeChanged,
+        "Schema changed to combined type incompatibly".into(),
+    )]
 }
 
 /// Combined schema → non-combined schema transition.
-fn compare_combined_to_schema(old: &serde_json::Value, new: &serde_json::Value) -> Vec<(DiffType, String)> {
+fn compare_combined_to_schema(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+) -> Vec<(DiffType, String)> {
     let compatible_set: HashSet<DiffType> = COMPATIBLE_CHANGES.iter().copied().collect();
 
     for kw in &["anyOf", "oneOf", "allOf"] {
         if let Some(arr) = old.get(*kw).and_then(|v| v.as_array()) {
-            let narrowed_type = if *kw == "allOf" { DiffType::ProductTypeNarrowed } else { DiffType::SumTypeNarrowed };
+            let narrowed_type = if *kw == "allOf" {
+                DiffType::ProductTypeNarrowed
+            } else {
+                DiffType::SumTypeNarrowed
+            };
             for sub in arr {
                 let sub_diffs = compare(sub, new);
                 if sub_diffs.iter().all(|(dt, _)| compatible_set.contains(dt)) {
@@ -323,7 +341,10 @@ fn compare_combined_to_schema(old: &serde_json::Value, new: &serde_json::Value) 
         }
     }
 
-    vec![(DiffType::TypeChanged, "Schema changed from combined type incompatibly".into())]
+    vec![(
+        DiffType::TypeChanged,
+        "Schema changed from combined type incompatibly".into(),
+    )]
 }
 
 /// Combined criteria change (e.g., `oneOf` → `anyOf`, `oneOf` → `allOf`).
@@ -344,27 +365,46 @@ fn compare_combined_criteria_change(
     // - old is singleton (unwrap safe, semantics preserved)
     // - new criterion is anyOf (most permissive combined type)
     // - new is singleton AND new criterion is NOT allOf (allOf adds constraints)
-    if old_is_singleton || new_criterion == "anyOf" || (new_is_singleton && new_criterion != "allOf") {
-        let mut diffs = vec![(DiffType::CombinedTypeExtended, format!("{old_criterion} → {new_criterion}"))];
+    if old_is_singleton
+        || new_criterion == "anyOf"
+        || (new_is_singleton && new_criterion != "allOf")
+    {
+        let mut diffs = vec![(
+            DiffType::CombinedTypeExtended,
+            format!("{old_criterion} → {new_criterion}"),
+        )];
 
         if let (Some(old_items), Some(new_items)) = (old_arr, new_arr) {
             let compatible_set: HashSet<DiffType> = COMPATIBLE_CHANGES.iter().copied().collect();
 
-            let comparisons: Vec<Vec<Vec<(DiffType, String)>>> = old_items.iter()
+            let comparisons: Vec<Vec<Vec<(DiffType, String)>>> = old_items
+                .iter()
                 .map(|o| new_items.iter().map(|n| compare(o, n)).collect())
                 .collect();
-            let compat_matrix: Vec<Vec<bool>> = comparisons.iter()
-                .map(|row| row.iter()
-                    .map(|d| d.iter().all(|(dt, _)| compatible_set.contains(dt)))
-                    .collect())
+            let compat_matrix: Vec<Vec<bool>> = comparisons
+                .iter()
+                .map(|row| {
+                    row.iter()
+                        .map(|d| d.iter().all(|(dt, _)| compatible_set.contains(dt)))
+                        .collect()
+                })
                 .collect();
 
             // Bipartite matching for subschema pairing.
-            let match_col = bipartite_matching_pairs(&compat_matrix, old_items.len(), new_items.len());
+            let match_col =
+                bipartite_matching_pairs(&compat_matrix, old_items.len(), new_items.len());
 
             // Length-based extended/narrowed using keyword semantics.
-            let narrowed_type = if old_criterion == "allOf" { DiffType::ProductTypeNarrowed } else { DiffType::SumTypeNarrowed };
-            let extended_type = if new_criterion == "allOf" { DiffType::ProductTypeExtended } else { DiffType::SumTypeExtended };
+            let narrowed_type = if old_criterion == "allOf" {
+                DiffType::ProductTypeNarrowed
+            } else {
+                DiffType::SumTypeNarrowed
+            };
+            let extended_type = if new_criterion == "allOf" {
+                DiffType::ProductTypeExtended
+            } else {
+                DiffType::SumTypeExtended
+            };
             if old_items.len() < new_items.len() {
                 diffs.push((extended_type, format!("{new_criterion} extended")));
             } else if old_items.len() > new_items.len() {
@@ -382,7 +422,10 @@ fn compare_combined_criteria_change(
         return diffs;
     }
 
-    vec![(DiffType::CombinedTypeChanged, format!("{old_criterion} → {new_criterion}"))]
+    vec![(
+        DiffType::CombinedTypeChanged,
+        format!("{old_criterion} → {new_criterion}"),
+    )]
 }
 
 /// Unwrap a singleton combined schema (oneOf/anyOf with exactly 1 element).
@@ -430,15 +473,20 @@ fn resolve_refs_inner(
                 .collect();
             serde_json::Value::Object(new_map)
         }
-        serde_json::Value::Array(arr) => {
-            serde_json::Value::Array(arr.iter().map(|v| resolve_refs_inner(v, root, visited)).collect())
-        }
+        serde_json::Value::Array(arr) => serde_json::Value::Array(
+            arr.iter()
+                .map(|v| resolve_refs_inner(v, root, visited))
+                .collect(),
+        ),
         other => other.clone(),
     }
 }
 
 /// Resolve a JSON Pointer reference. Handles `"#"` (root) and `"#/path/to/def"`.
-fn resolve_json_pointer<'a>(ref_str: &str, root: &'a serde_json::Value) -> Option<&'a serde_json::Value> {
+fn resolve_json_pointer<'a>(
+    ref_str: &str,
+    root: &'a serde_json::Value,
+) -> Option<&'a serde_json::Value> {
     if ref_str == "#" {
         return Some(root);
     }
@@ -463,7 +511,10 @@ fn compare(old: &serde_json::Value, new: &serde_json::Value) -> Vec<(DiffType, S
     // Confluent: empty schema → schema with structural keywords (properties, items, etc.)
     // is treated as "schema adds properties" — a narrowing change.
     if is_empty_schema_value(old) && !is_empty_schema_value(new) && new.is_object() {
-        return vec![(DiffType::TypeNarrowed, "Schema changed from empty to constrained".into())];
+        return vec![(
+            DiffType::TypeNarrowed,
+            "Schema changed from empty to constrained".into(),
+        )];
     }
 
     // Detect schema-level transitions (non-combined ↔ combined, or criteria change).
@@ -518,7 +569,11 @@ fn compare(old: &serde_json::Value, new: &serde_json::Value) -> Vec<(DiffType, S
     diffs
 }
 
-fn compare_metadata(old: &serde_json::Value, new: &serde_json::Value, diffs: &mut Vec<(DiffType, String)>) {
+fn compare_metadata(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+    diffs: &mut Vec<(DiffType, String)>,
+) {
     check_value_changed(old, new, "$id", DiffType::IdChanged, diffs);
     check_value_changed(old, new, "title", DiffType::TitleChanged, diffs);
     check_value_changed(old, new, "description", DiffType::DescriptionChanged, diffs);
@@ -526,7 +581,11 @@ fn compare_metadata(old: &serde_json::Value, new: &serde_json::Value, diffs: &mu
 }
 
 /// Confluent treats const changes as `ENUM_ARRAY_CHANGED` (same diff type as enum changes).
-fn compare_const(old: &serde_json::Value, new: &serde_json::Value, diffs: &mut Vec<(DiffType, String)>) {
+fn compare_const(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+    diffs: &mut Vec<(DiffType, String)>,
+) {
     if let (Some(o), Some(n)) = (old.get("const"), new.get("const"))
         && o != n
     {
@@ -534,7 +593,11 @@ fn compare_const(old: &serde_json::Value, new: &serde_json::Value, diffs: &mut V
     }
 }
 
-fn compare_type(old: &serde_json::Value, new: &serde_json::Value, diffs: &mut Vec<(DiffType, String)>) {
+fn compare_type(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+    diffs: &mut Vec<(DiffType, String)>,
+) {
     // Confluent: Kafka Connect `connect.type: "bytes"` makes schemas equivalent regardless of type.
     if is_connect_bytes(old) && is_connect_bytes(new) {
         return;
@@ -554,88 +617,237 @@ fn compare_type(old: &serde_json::Value, new: &serde_json::Value, diffs: &mut Ve
 
     if old_normalized == new_normalized {
         if new_types.contains("number") && old_types.contains("integer") {
-            diffs.push((DiffType::TypeExtended, format!("Type promoted from {old_types:?} to {new_types:?}")));
+            diffs.push((
+                DiffType::TypeExtended,
+                format!("Type promoted from {old_types:?} to {new_types:?}"),
+            ));
         } else {
-            diffs.push((DiffType::TypeNarrowed, format!("Type narrowed from {old_types:?} to {new_types:?}")));
+            diffs.push((
+                DiffType::TypeNarrowed,
+                format!("Type narrowed from {old_types:?} to {new_types:?}"),
+            ));
         }
         return;
     }
 
     if old_normalized.is_subset(&new_normalized) {
-        diffs.push((DiffType::TypeExtended, format!("Type extended from {old_types:?} to {new_types:?}")));
+        diffs.push((
+            DiffType::TypeExtended,
+            format!("Type extended from {old_types:?} to {new_types:?}"),
+        ));
     } else if new_normalized.is_subset(&old_normalized) {
-        diffs.push((DiffType::TypeNarrowed, format!("Type narrowed from {old_types:?} to {new_types:?}")));
+        diffs.push((
+            DiffType::TypeNarrowed,
+            format!("Type narrowed from {old_types:?} to {new_types:?}"),
+        ));
     } else {
-        diffs.push((DiffType::TypeChanged, format!("Type changed from {old_types:?} to {new_types:?}")));
+        diffs.push((
+            DiffType::TypeChanged,
+            format!("Type changed from {old_types:?} to {new_types:?}"),
+        ));
     }
 }
 
 fn normalize_types(types: &HashSet<String>) -> HashSet<String> {
     types
         .iter()
-        .map(|t| if t == "integer" { "number".to_string() } else { t.clone() })
+        .map(|t| {
+            if t == "integer" {
+                "number".to_string()
+            } else {
+                t.clone()
+            }
+        })
         .collect()
 }
 
-fn compare_string_constraints(old: &serde_json::Value, new: &serde_json::Value, diffs: &mut Vec<(DiffType, String)>) {
-    compare_numeric_field(old, new, "maxLength",
-        (DiffType::MaxLengthAdded, DiffType::MaxLengthRemoved,
-         DiffType::MaxLengthIncreased, DiffType::MaxLengthDecreased), diffs);
-    compare_numeric_field(old, new, "minLength",
-        (DiffType::MinLengthAdded, DiffType::MinLengthRemoved,
-         DiffType::MinLengthIncreased, DiffType::MinLengthDecreased), diffs);
-    compare_string_field(old, new, "pattern",
-        DiffType::PatternAdded, DiffType::PatternRemoved, DiffType::PatternChanged, diffs);
+fn compare_string_constraints(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+    diffs: &mut Vec<(DiffType, String)>,
+) {
+    compare_numeric_field(
+        old,
+        new,
+        "maxLength",
+        (
+            DiffType::MaxLengthAdded,
+            DiffType::MaxLengthRemoved,
+            DiffType::MaxLengthIncreased,
+            DiffType::MaxLengthDecreased,
+        ),
+        diffs,
+    );
+    compare_numeric_field(
+        old,
+        new,
+        "minLength",
+        (
+            DiffType::MinLengthAdded,
+            DiffType::MinLengthRemoved,
+            DiffType::MinLengthIncreased,
+            DiffType::MinLengthDecreased,
+        ),
+        diffs,
+    );
+    compare_string_field(
+        old,
+        new,
+        "pattern",
+        DiffType::PatternAdded,
+        DiffType::PatternRemoved,
+        DiffType::PatternChanged,
+        diffs,
+    );
 }
 
-fn compare_number_constraints(old: &serde_json::Value, new: &serde_json::Value, diffs: &mut Vec<(DiffType, String)>) {
-    compare_numeric_field(old, new, "maximum",
-        (DiffType::MaximumAdded, DiffType::MaximumRemoved,
-         DiffType::MaximumIncreased, DiffType::MaximumDecreased), diffs);
-    compare_numeric_field(old, new, "minimum",
-        (DiffType::MinimumAdded, DiffType::MinimumRemoved,
-         DiffType::MinimumIncreased, DiffType::MinimumDecreased), diffs);
-    compare_numeric_field(old, new, "exclusiveMaximum",
-        (DiffType::ExclusiveMaximumAdded, DiffType::ExclusiveMaximumRemoved,
-         DiffType::ExclusiveMaximumIncreased, DiffType::ExclusiveMaximumDecreased), diffs);
-    compare_numeric_field(old, new, "exclusiveMinimum",
-        (DiffType::ExclusiveMinimumAdded, DiffType::ExclusiveMinimumRemoved,
-         DiffType::ExclusiveMinimumIncreased, DiffType::ExclusiveMinimumDecreased), diffs);
+fn compare_number_constraints(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+    diffs: &mut Vec<(DiffType, String)>,
+) {
+    compare_numeric_field(
+        old,
+        new,
+        "maximum",
+        (
+            DiffType::MaximumAdded,
+            DiffType::MaximumRemoved,
+            DiffType::MaximumIncreased,
+            DiffType::MaximumDecreased,
+        ),
+        diffs,
+    );
+    compare_numeric_field(
+        old,
+        new,
+        "minimum",
+        (
+            DiffType::MinimumAdded,
+            DiffType::MinimumRemoved,
+            DiffType::MinimumIncreased,
+            DiffType::MinimumDecreased,
+        ),
+        diffs,
+    );
+    compare_numeric_field(
+        old,
+        new,
+        "exclusiveMaximum",
+        (
+            DiffType::ExclusiveMaximumAdded,
+            DiffType::ExclusiveMaximumRemoved,
+            DiffType::ExclusiveMaximumIncreased,
+            DiffType::ExclusiveMaximumDecreased,
+        ),
+        diffs,
+    );
+    compare_numeric_field(
+        old,
+        new,
+        "exclusiveMinimum",
+        (
+            DiffType::ExclusiveMinimumAdded,
+            DiffType::ExclusiveMinimumRemoved,
+            DiffType::ExclusiveMinimumIncreased,
+            DiffType::ExclusiveMinimumDecreased,
+        ),
+        diffs,
+    );
     // multipleOf: uses divisibility, not numeric comparison.
     compare_multiple_of(old, new, diffs);
 }
 
-fn compare_object_properties(old: &serde_json::Value, new: &serde_json::Value, diffs: &mut Vec<(DiffType, String)>) {
-    // additionalProperties
-    // Absent additionalProperties = true (default open). Normalize for comparison.
+fn compare_object_properties(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+    diffs: &mut Vec<(DiffType, String)>,
+) {
+    compare_additional_properties(old, new, diffs);
+
+    let open = is_open_content_model(new);
+    let new_required = extract_string_set(new, "required");
+    compare_required_attributes(old, new, &new_required, diffs);
+    compare_property_changes(old, new, open, &new_required, diffs);
+
+    compare_numeric_field(
+        old,
+        new,
+        "maxProperties",
+        (
+            DiffType::MaxPropertiesAdded,
+            DiffType::MaxPropertiesRemoved,
+            DiffType::MaxPropertiesIncreased,
+            DiffType::MaxPropertiesDecreased,
+        ),
+        diffs,
+    );
+    compare_numeric_field(
+        old,
+        new,
+        "minProperties",
+        (
+            DiffType::MinPropertiesAdded,
+            DiffType::MinPropertiesRemoved,
+            DiffType::MinPropertiesIncreased,
+            DiffType::MinPropertiesDecreased,
+        ),
+        diffs,
+    );
+    compare_dependencies(old, new, diffs);
+}
+
+fn compare_additional_properties(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+    diffs: &mut Vec<(DiffType, String)>,
+) {
     let default_true = serde_json::Value::Bool(true);
     let old_ap = old.get("additionalProperties").unwrap_or(&default_true);
     let new_ap = new.get("additionalProperties").unwrap_or(&default_true);
-    if old_ap != new_ap {
-        if is_more_restrictive(old_ap, new_ap) {
-            diffs.push((DiffType::AdditionalPropertiesNarrowed, "additionalProperties narrowed".into()));
-        } else if old_ap == &serde_json::Value::Bool(false) || (old_ap.is_object() && new_ap == &default_true) {
-            diffs.push((DiffType::AdditionalPropertiesAdded, "additionalProperties added".into()));
-        } else {
-            diffs.push((DiffType::AdditionalPropertiesExtended, "additionalProperties extended".into()));
-        }
+    if old_ap == new_ap {
+        return;
     }
+    if is_more_restrictive(old_ap, new_ap) {
+        diffs.push((
+            DiffType::AdditionalPropertiesNarrowed,
+            "additionalProperties narrowed".into(),
+        ));
+    } else if old_ap == &serde_json::Value::Bool(false)
+        || (old_ap.is_object() && new_ap == &default_true)
+    {
+        diffs.push((
+            DiffType::AdditionalPropertiesAdded,
+            "additionalProperties added".into(),
+        ));
+    } else {
+        diffs.push((
+            DiffType::AdditionalPropertiesExtended,
+            "additionalProperties extended".into(),
+        ));
+    }
+}
 
-    let open = is_open_content_model(new);
-
-    // Required attributes
+fn compare_required_attributes(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+    new_required: &HashSet<String>,
+    diffs: &mut Vec<(DiffType, String)>,
+) {
     let old_required = extract_string_set(old, "required");
-    let new_required = extract_string_set(new, "required");
-    for attr in old_required.difference(&new_required) {
-        diffs.push((DiffType::RequiredAttributeRemoved, format!("Required attribute '{attr}' removed")));
+    for attr in old_required.difference(new_required) {
+        diffs.push((
+            DiffType::RequiredAttributeRemoved,
+            format!("Required attribute '{attr}' removed"),
+        ));
     }
     let new_props_keys = extract_property_keys(new);
     for attr in new_required.difference(&old_required) {
-        // Only report if the attribute is an actual property (Confluent only checks existing properties).
         if !new_props_keys.contains(attr) {
             continue;
         }
-        let has_default = new.get("properties")
+        let has_default = new
+            .get("properties")
             .and_then(|p| p.get(attr.as_str()))
             .and_then(|p| p.get("default"))
             .is_some();
@@ -646,8 +858,15 @@ fn compare_object_properties(old: &serde_json::Value, new: &serde_json::Value, d
         };
         diffs.push((dt, format!("Required attribute '{attr}' added")));
     }
+}
 
-    // Properties added/removed
+fn compare_property_changes(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+    open: bool,
+    new_required: &HashSet<String>,
+    diffs: &mut Vec<(DiffType, String)>,
+) {
     let old_props = extract_property_keys(old);
     let new_props = extract_property_keys(new);
     let partially_open_old = is_partially_open_content_model(old);
@@ -668,7 +887,8 @@ fn compare_object_properties(old: &serde_json::Value, new: &serde_json::Value, d
                 DiffType::PropertyAddedToOpenContentModel
             }
         } else if new_required.contains(prop) {
-            let has_default = new.get("properties")
+            let has_default = new
+                .get("properties")
                 .and_then(|p| p.get(prop.as_str()))
                 .and_then(|p| p.get("default"))
                 .is_some();
@@ -701,7 +921,6 @@ fn compare_object_properties(old: &serde_json::Value, new: &serde_json::Value, d
         diffs.push((dt, format!("Property '{prop}' removed")));
     }
 
-    // Recurse into common properties
     for prop in old_props.intersection(&new_props) {
         if let (Some(old_prop), Some(new_prop)) = (
             old.get("properties").and_then(|p| p.get(prop.as_str())),
@@ -710,32 +929,45 @@ fn compare_object_properties(old: &serde_json::Value, new: &serde_json::Value, d
             diffs.extend(compare(old_prop, new_prop));
         }
     }
-
-    // minProperties / maxProperties
-    compare_numeric_field(old, new, "maxProperties",
-        (DiffType::MaxPropertiesAdded, DiffType::MaxPropertiesRemoved,
-         DiffType::MaxPropertiesIncreased, DiffType::MaxPropertiesDecreased), diffs);
-    compare_numeric_field(old, new, "minProperties",
-        (DiffType::MinPropertiesAdded, DiffType::MinPropertiesRemoved,
-         DiffType::MinPropertiesIncreased, DiffType::MinPropertiesDecreased), diffs);
-
-    // Dependencies
-    compare_dependencies(old, new, diffs);
 }
 
-fn compare_array_constraints(old: &serde_json::Value, new: &serde_json::Value, diffs: &mut Vec<(DiffType, String)>) {
-    compare_numeric_field(old, new, "maxItems",
-        (DiffType::MaxItemsAdded, DiffType::MaxItemsRemoved,
-         DiffType::MaxItemsIncreased, DiffType::MaxItemsDecreased), diffs);
-    compare_numeric_field(old, new, "minItems",
-        (DiffType::MinItemsAdded, DiffType::MinItemsRemoved,
-         DiffType::MinItemsIncreased, DiffType::MinItemsDecreased), diffs);
+fn compare_array_constraints(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+    diffs: &mut Vec<(DiffType, String)>,
+) {
+    compare_numeric_field(
+        old,
+        new,
+        "maxItems",
+        (
+            DiffType::MaxItemsAdded,
+            DiffType::MaxItemsRemoved,
+            DiffType::MaxItemsIncreased,
+            DiffType::MaxItemsDecreased,
+        ),
+        diffs,
+    );
+    compare_numeric_field(
+        old,
+        new,
+        "minItems",
+        (
+            DiffType::MinItemsAdded,
+            DiffType::MinItemsRemoved,
+            DiffType::MinItemsIncreased,
+            DiffType::MinItemsDecreased,
+        ),
+        diffs,
+    );
 
     match (old.get("uniqueItems"), new.get("uniqueItems")) {
-        (None | Some(serde_json::Value::Bool(false)), Some(serde_json::Value::Bool(true))) =>
-            diffs.push((DiffType::UniqueItemsAdded, "uniqueItems added".into())),
-        (Some(serde_json::Value::Bool(true)), None | Some(serde_json::Value::Bool(false))) =>
-            diffs.push((DiffType::UniqueItemsRemoved, "uniqueItems removed".into())),
+        (None | Some(serde_json::Value::Bool(false)), Some(serde_json::Value::Bool(true))) => {
+            diffs.push((DiffType::UniqueItemsAdded, "uniqueItems added".into()));
+        }
+        (Some(serde_json::Value::Bool(true)), None | Some(serde_json::Value::Bool(false))) => {
+            diffs.push((DiffType::UniqueItemsRemoved, "uniqueItems removed".into()));
+        }
         _ => {}
     }
 
@@ -746,14 +978,26 @@ fn compare_array_constraints(old: &serde_json::Value, new: &serde_json::Value, d
     let new_ai = new.get("additionalItems").unwrap_or(&ai_default);
     match (old_ai, new_ai) {
         (o, n) if o == n => {}
-        (o, n) if o == &serde_json::Value::Bool(false) || (o.is_object() && n == &serde_json::Value::Bool(true)) => {
-            diffs.push((DiffType::AdditionalItemsAdded, "additionalItems added".into()));
+        (o, n)
+            if o == &serde_json::Value::Bool(false)
+                || (o.is_object() && n == &serde_json::Value::Bool(true)) =>
+        {
+            diffs.push((
+                DiffType::AdditionalItemsAdded,
+                "additionalItems added".into(),
+            ));
         }
         (o, n) if is_more_restrictive(o, n) => {
-            diffs.push((DiffType::AdditionalItemsNarrowed, "additionalItems narrowed".into()));
+            diffs.push((
+                DiffType::AdditionalItemsNarrowed,
+                "additionalItems narrowed".into(),
+            ));
         }
         _ => {
-            diffs.push((DiffType::AdditionalItemsExtended, "additionalItems extended".into()));
+            diffs.push((
+                DiffType::AdditionalItemsExtended,
+                "additionalItems extended".into(),
+            ));
         }
     }
 
@@ -805,7 +1049,10 @@ fn compare_tuple_items(
 
     // Items added to tuple — check OLD schema's additional items model for coverage.
     let old_additional_schema = old_schema.get(additional_keyword).filter(|v| v.is_object());
-    let old_is_open = !matches!(old_schema.get(additional_keyword), Some(serde_json::Value::Bool(false)));
+    let old_is_open = !matches!(
+        old_schema.get(additional_keyword),
+        Some(serde_json::Value::Bool(false))
+    );
     for added_item in new_arr.iter().skip(old_arr.len()) {
         let dt = if let Some(add_schema) = old_additional_schema {
             let sub_diffs = compare(add_schema, added_item);
@@ -828,7 +1075,10 @@ fn compare_tuple_items(
 
     // Items removed from tuple — check NEW schema's additional items model for coverage.
     let new_additional_schema = new_schema.get(additional_keyword).filter(|v| v.is_object());
-    let new_is_open = !matches!(new_schema.get(additional_keyword), Some(serde_json::Value::Bool(false)));
+    let new_is_open = !matches!(
+        new_schema.get(additional_keyword),
+        Some(serde_json::Value::Bool(false))
+    );
     for removed_item in old_arr.iter().skip(new_arr.len()) {
         let dt = if let Some(add_schema) = new_additional_schema {
             let sub_diffs = compare(removed_item, add_schema);
@@ -853,7 +1103,11 @@ fn compare_tuple_items(
     }
 }
 
-fn compare_enum(old: &serde_json::Value, new: &serde_json::Value, diffs: &mut Vec<(DiffType, String)>) {
+fn compare_enum(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+    diffs: &mut Vec<(DiffType, String)>,
+) {
     let old_enum = old.get("enum").and_then(|e| e.as_array());
     let new_enum = new.get("enum").and_then(|e| e.as_array());
 
@@ -878,10 +1132,35 @@ fn compare_enum(old: &serde_json::Value, new: &serde_json::Value, diffs: &mut Ve
     }
 }
 
-fn compare_combined(old: &serde_json::Value, new: &serde_json::Value, diffs: &mut Vec<(DiffType, String)>) {
-    compare_combined_keyword(old, new, "anyOf", DiffType::SumTypeExtended, DiffType::SumTypeNarrowed, diffs);
-    compare_combined_keyword(old, new, "oneOf", DiffType::SumTypeExtended, DiffType::SumTypeNarrowed, diffs);
-    compare_combined_keyword(old, new, "allOf", DiffType::ProductTypeExtended, DiffType::ProductTypeNarrowed, diffs);
+fn compare_combined(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+    diffs: &mut Vec<(DiffType, String)>,
+) {
+    compare_combined_keyword(
+        old,
+        new,
+        "anyOf",
+        DiffType::SumTypeExtended,
+        DiffType::SumTypeNarrowed,
+        diffs,
+    );
+    compare_combined_keyword(
+        old,
+        new,
+        "oneOf",
+        DiffType::SumTypeExtended,
+        DiffType::SumTypeNarrowed,
+        diffs,
+    );
+    compare_combined_keyword(
+        old,
+        new,
+        "allOf",
+        DiffType::ProductTypeExtended,
+        DiffType::ProductTypeNarrowed,
+        diffs,
+    );
 
     // not — Confluent compares in REVERSED order, then checks compatibility.
     // If reversed comparison is compatible → NOT_TYPE_NARROWED (more restrictive not = more permissive overall).
@@ -891,7 +1170,9 @@ fn compare_combined(old: &serde_json::Value, new: &serde_json::Value, diffs: &mu
     {
         let compatible_set: HashSet<DiffType> = COMPATIBLE_CHANGES.iter().copied().collect();
         let reversed_diffs = compare(new_not, old_not);
-        let all_compatible = reversed_diffs.iter().all(|(dt, _)| compatible_set.contains(dt));
+        let all_compatible = reversed_diffs
+            .iter()
+            .all(|(dt, _)| compatible_set.contains(dt));
         if all_compatible {
             diffs.push((DiffType::NotTypeNarrowed, "not type narrowed".into()));
         } else {
@@ -916,24 +1197,31 @@ fn compare_combined_keyword(
     match (old_arr, new_arr) {
         (Some(old_items), Some(new_items)) => {
             // Cache all pairwise comparisons.
-            let comparisons: Vec<Vec<Vec<(DiffType, String)>>> = old_items.iter()
+            let comparisons: Vec<Vec<Vec<(DiffType, String)>>> = old_items
+                .iter()
                 .map(|o| new_items.iter().map(|n| compare(o, n)).collect())
                 .collect();
-            let compat_matrix: Vec<Vec<bool>> = comparisons.iter()
-                .map(|row| row.iter()
-                    .map(|d| d.iter().all(|(dt, _)| compatible_set.contains(dt)))
-                    .collect())
+            let compat_matrix: Vec<Vec<bool>> = comparisons
+                .iter()
+                .map(|row| {
+                    row.iter()
+                        .map(|d| d.iter().all(|(dt, _)| compatible_set.contains(dt)))
+                        .collect()
+                })
                 .collect();
 
             // Confluent: bipartite matching detects incompatible subschema changes.
-            let match_col = bipartite_matching_pairs(&compat_matrix, old_items.len(), new_items.len());
+            let match_col =
+                bipartite_matching_pairs(&compat_matrix, old_items.len(), new_items.len());
             let matching = match_col.iter().filter(|m| m.is_some()).count();
             let smaller = old_items.len().min(new_items.len());
 
             if matching < smaller {
                 diffs.push((
                     DiffType::CombinedTypeSubschemasChanged,
-                    format!("{keyword} subschemas changed incompatibly ({matching}/{smaller} matched)"),
+                    format!(
+                        "{keyword} subschemas changed incompatibly ({matching}/{smaller} matched)"
+                    ),
                 ));
             }
 
@@ -978,7 +1266,8 @@ fn augment(
     for c in 0..match_col.len() {
         if matrix[r][c] && !visited[c] {
             visited[c] = true;
-            if match_col[c].is_none() || augment(matrix, match_col[c].unwrap(), match_col, visited) {
+            if match_col[c].is_none() || augment(matrix, match_col[c].unwrap(), match_col, visited)
+            {
                 match_col[c] = Some(r);
                 return true;
             }
@@ -1085,9 +1374,10 @@ fn extract_types(schema: &serde_json::Value) -> HashSet<String> {
             set.insert(s.clone());
             set
         }
-        Some(serde_json::Value::Array(arr)) => {
-            arr.iter().filter_map(|v| v.as_str().map(String::from)).collect()
-        }
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect(),
         _ => HashSet::new(),
     }
 }
@@ -1096,7 +1386,11 @@ fn extract_string_set(schema: &serde_json::Value, field: &str) -> HashSet<String
     schema
         .get(field)
         .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -1109,7 +1403,10 @@ fn extract_property_keys(schema: &serde_json::Value) -> HashSet<String> {
 }
 
 fn is_open_content_model(schema: &serde_json::Value) -> bool {
-    !matches!(schema.get("additionalProperties"), Some(serde_json::Value::Bool(false)))
+    !matches!(
+        schema.get("additionalProperties"),
+        Some(serde_json::Value::Bool(false))
+    )
 }
 
 fn is_false_schema(schema: &serde_json::Value, prop: &str) -> bool {
@@ -1131,7 +1428,10 @@ fn is_empty_schema(schema: &serde_json::Value, prop: &str) -> bool {
 
 fn is_more_restrictive(old: &serde_json::Value, new: &serde_json::Value) -> bool {
     match (old, new) {
-        (serde_json::Value::Bool(true), serde_json::Value::Bool(false) | serde_json::Value::Object(_)) => true,
+        (
+            serde_json::Value::Bool(true),
+            serde_json::Value::Bool(false) | serde_json::Value::Object(_),
+        ) => true,
         (serde_json::Value::Object(_), serde_json::Value::Object(_)) => {
             let compatible_set: HashSet<DiffType> = COMPATIBLE_CHANGES.iter().copied().collect();
             let diffs = compare(old, new);
@@ -1143,7 +1443,11 @@ fn is_more_restrictive(old: &serde_json::Value, new: &serde_json::Value) -> bool
 
 // -- Dependencies --
 
-fn compare_dependencies(old: &serde_json::Value, new: &serde_json::Value, diffs: &mut Vec<(DiffType, String)>) {
+fn compare_dependencies(
+    old: &serde_json::Value,
+    new: &serde_json::Value,
+    diffs: &mut Vec<(DiffType, String)>,
+) {
     // Merge legacy "dependencies" with 2020-12 "dependentRequired" / "dependentSchemas".
     let old_merged = merge_dependencies(old);
     let new_merged = merge_dependencies(new);
@@ -1152,11 +1456,21 @@ fn compare_dependencies(old: &serde_json::Value, new: &serde_json::Value, diffs:
         return;
     }
 
-    let emit_dep = |map: &serde_json::Map<String, serde_json::Value>, added: bool, diffs: &mut Vec<(DiffType, String)>| {
+    let emit_dep = |map: &serde_json::Map<String, serde_json::Value>,
+                    added: bool,
+                    diffs: &mut Vec<(DiffType, String)>| {
         for key in map.keys() {
             let dt = if map[key].is_array() {
-                if added { DiffType::DependencyArrayAdded } else { DiffType::DependencyArrayRemoved }
-            } else if added { DiffType::DependencySchemaAdded } else { DiffType::DependencySchemaRemoved };
+                if added {
+                    DiffType::DependencyArrayAdded
+                } else {
+                    DiffType::DependencyArrayRemoved
+                }
+            } else if added {
+                DiffType::DependencySchemaAdded
+            } else {
+                DiffType::DependencySchemaRemoved
+            };
             let verb = if added { "added" } else { "removed" };
             diffs.push((dt, format!("Dependency '{key}' {verb}")));
         }
@@ -1176,17 +1490,29 @@ fn compare_dependencies(old: &serde_json::Value, new: &serde_json::Value, diffs:
 
     for key in new_keys.difference(&old_keys) {
         if new_merged[key.as_str()].is_array() {
-            diffs.push((DiffType::DependencyArrayAdded, format!("Dependency array '{key}' added")));
+            diffs.push((
+                DiffType::DependencyArrayAdded,
+                format!("Dependency array '{key}' added"),
+            ));
         } else {
-            diffs.push((DiffType::DependencySchemaAdded, format!("Dependency schema '{key}' added")));
+            diffs.push((
+                DiffType::DependencySchemaAdded,
+                format!("Dependency schema '{key}' added"),
+            ));
         }
     }
 
     for key in old_keys.difference(&new_keys) {
         if old_merged[key.as_str()].is_array() {
-            diffs.push((DiffType::DependencyArrayRemoved, format!("Dependency array '{key}' removed")));
+            diffs.push((
+                DiffType::DependencyArrayRemoved,
+                format!("Dependency array '{key}' removed"),
+            ));
         } else {
-            diffs.push((DiffType::DependencySchemaRemoved, format!("Dependency schema '{key}' removed")));
+            diffs.push((
+                DiffType::DependencySchemaRemoved,
+                format!("Dependency schema '{key}' removed"),
+            ));
         }
     }
 
@@ -1195,15 +1521,34 @@ fn compare_dependencies(old: &serde_json::Value, new: &serde_json::Value, diffs:
         let new_val = &new_merged[key.as_str()];
 
         if old_val.is_array() && new_val.is_array() {
-            let old_arr: HashSet<String> = old_val.as_array().unwrap().iter().map(ToString::to_string).collect();
-            let new_arr: HashSet<String> = new_val.as_array().unwrap().iter().map(ToString::to_string).collect();
+            let old_arr: HashSet<String> = old_val
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(ToString::to_string)
+                .collect();
+            let new_arr: HashSet<String> = new_val
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(ToString::to_string)
+                .collect();
             if old_arr != new_arr {
                 if new_arr.is_subset(&old_arr) {
-                    diffs.push((DiffType::DependencyArrayNarrowed, format!("Dependency array '{key}' narrowed")));
+                    diffs.push((
+                        DiffType::DependencyArrayNarrowed,
+                        format!("Dependency array '{key}' narrowed"),
+                    ));
                 } else if old_arr.is_subset(&new_arr) {
-                    diffs.push((DiffType::DependencyArrayExtended, format!("Dependency array '{key}' extended")));
+                    diffs.push((
+                        DiffType::DependencyArrayExtended,
+                        format!("Dependency array '{key}' extended"),
+                    ));
                 } else {
-                    diffs.push((DiffType::DependencyArrayChanged, format!("Dependency array '{key}' changed")));
+                    diffs.push((
+                        DiffType::DependencyArrayChanged,
+                        format!("Dependency array '{key}' changed"),
+                    ));
                 }
             }
         } else if old_val.is_object() && new_val.is_object() {
@@ -1215,13 +1560,22 @@ fn compare_dependencies(old: &serde_json::Value, new: &serde_json::Value, diffs:
 /// Merge legacy `dependencies` with 2020-12 `dependentRequired` and `dependentSchemas`.
 fn merge_dependencies(schema: &serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
     let mut result = serde_json::Map::new();
-    if let Some(deps) = schema.get("dependencies").and_then(serde_json::Value::as_object) {
+    if let Some(deps) = schema
+        .get("dependencies")
+        .and_then(serde_json::Value::as_object)
+    {
         result.extend(deps.clone());
     }
-    if let Some(deps) = schema.get("dependentRequired").and_then(serde_json::Value::as_object) {
+    if let Some(deps) = schema
+        .get("dependentRequired")
+        .and_then(serde_json::Value::as_object)
+    {
         result.extend(deps.clone());
     }
-    if let Some(deps) = schema.get("dependentSchemas").and_then(serde_json::Value::as_object) {
+    if let Some(deps) = schema
+        .get("dependentSchemas")
+        .and_then(serde_json::Value::as_object)
+    {
         result.extend(deps.clone());
     }
     result
@@ -1230,10 +1584,17 @@ fn merge_dependencies(schema: &serde_json::Value) -> serde_json::Map<String, ser
 // -- Partially open content model --
 
 fn is_partially_open_content_model(schema: &serde_json::Value) -> bool {
-    if schema.get("patternProperties").and_then(serde_json::Value::as_object).is_some_and(|m| !m.is_empty()) {
+    if schema
+        .get("patternProperties")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|m| !m.is_empty())
+    {
         return true;
     }
-    matches!(schema.get("additionalProperties"), Some(serde_json::Value::Object(_)))
+    matches!(
+        schema.get("additionalProperties"),
+        Some(serde_json::Value::Object(_))
+    )
 }
 
 /// Check if a property is "covered" by a partially open content model.
@@ -1253,7 +1614,10 @@ fn is_covered_by_partial_model(
     let compatible_set: HashSet<DiffType> = COMPATIBLE_CHANGES.iter().copied().collect();
 
     // Check patternProperties first.
-    if let Some(patterns) = model_schema.get("patternProperties").and_then(serde_json::Value::as_object) {
+    if let Some(patterns) = model_schema
+        .get("patternProperties")
+        .and_then(serde_json::Value::as_object)
+    {
         for (pattern, pattern_schema) in patterns {
             if regex::Regex::new(pattern).is_ok_and(|re| re.is_match(prop_name)) {
                 if let Some(ps) = prop_schema {

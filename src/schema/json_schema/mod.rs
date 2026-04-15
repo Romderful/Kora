@@ -4,8 +4,8 @@ mod diff;
 
 use sha2::{Digest, Sha256};
 
-use crate::error::KoraError;
 use super::{CompatDirection, CompatibilityResult};
+use crate::error::KoraError;
 
 // -- Parsing --
 
@@ -30,9 +30,7 @@ pub fn parse(raw: &str) -> Result<(String, String), KoraError> {
     }
 
     if !jsonschema::meta::is_valid(&value) {
-        return Err(KoraError::InvalidSchema(
-            "Invalid JSON Schema".to_string(),
-        ));
+        return Err(KoraError::InvalidSchema("Invalid JSON Schema".to_string()));
     }
 
     let canonical = canonical_json(&value);
@@ -71,7 +69,13 @@ fn canonical_json(value: &serde_json::Value) -> String {
             keys.sort();
             let entries: Vec<String> = keys
                 .iter()
-                .map(|k| format!("{}:{}", serde_json::to_string(k).unwrap_or_default(), canonical_json(&map[*k])))
+                .map(|k| {
+                    format!(
+                        "{}:{}",
+                        serde_json::to_string(k).unwrap_or_default(),
+                        canonical_json(&map[*k])
+                    )
+                })
                 .collect();
             format!("{{{}}}", entries.join(","))
         }

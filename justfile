@@ -11,6 +11,24 @@ ensure-pg:
       echo "Waiting for PG..."; until {{ pg_ready }}; do sleep 0.3; done; }
     @until {{ db_ready }}; do sleep 0.3; done
 
+# ---------- Quality ----------
+
+# Check formatting
+[group('quality')]
+fmt:
+    cargo fmt --check
+
+# Run clippy lints
+[group('quality')]
+lint:
+    cargo clippy -- -D clippy::all -D clippy::pedantic
+
+# Auto-fix formatting + clippy suggestions
+[group('quality')]
+fix:
+    cargo fmt
+    cargo clippy --fix --allow-dirty -- -D clippy::all -D clippy::pedantic
+
 # ---------- Development ----------
 
 # Run Kora locally with cargo (starts PG automatically)
@@ -22,20 +40,24 @@ dev:
     trap 'docker compose down' EXIT
     cargo run
 
-# Run all tests (starts PG automatically)
+# Run all tests (starts PG if needed, tears down after)
 [group('dev')]
 test:
     #!/usr/bin/env bash
     set -euo pipefail
-    just ensure-pg
-    cargo test --test '*' -- --include-ignored; rc=$?
-    docker compose down
-    exit $rc
+    if [ "${CI:-}" = "true" ]; then
+      echo "CI — PG managed by service container"
+    elif pg_isready -h localhost -q 2>/dev/null; then
+      echo "PG already running — skipping docker compose"
+    else
+      just ensure-pg
+      trap 'docker compose down' EXIT
+    fi
+    cargo test --test '*' -- --include-ignored
 
-# Run clippy lints
-[group('dev')]
-lint:
-    cargo clippy -- -D clippy::all -D clippy::pedantic
+# fmt + lint + test (CI entrypoint)
+[group('quality')]
+ci: fmt lint test
 
 # ---------- Build & Push ----------
 
