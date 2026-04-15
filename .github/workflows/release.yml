@@ -1,21 +1,24 @@
 # Release — fully automated via release-plz
 #
-# On every push to main:
+# Triggers AFTER CI succeeds on main (not in parallel):
 #   1. release-plz creates/updates a Release PR (version bump + CHANGELOG)
 #   2. The Release PR is auto-merged immediately (version bump only — low risk)
-#   3. The merge triggers this workflow again → release-plz creates tag + GitHub Release
-#   4. Docker images are built and pushed to GHCR
+#   3. The merge triggers CI again → CI passes → this workflow runs again
+#   4. release-plz creates tag + GitHub Release → Docker build + push to GHCR
+#
+# If CI fails, this workflow never runs → no stale Release PRs.
 #
 # Requires a fine-grained PAT stored as RELEASE_PLZ_TOKEN with permissions:
 #   - Contents: Read & Write
 #   - Pull requests: Read & Write
-# This is needed because GITHUB_TOKEN cannot trigger CI on PRs it creates.
 
 name: Release
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
     branches: [main]
+    types: [completed]
 
 concurrency:
   group: release
@@ -29,6 +32,7 @@ jobs:
     name: release-plz
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    if: github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: write
       pull-requests: write
