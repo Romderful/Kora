@@ -15,15 +15,3 @@ services:
       interval: 2s
       timeout: 3s
       retries: 10
-
-  api:
-    container_name: api
-    build: .
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      HOST: 0.0.0.0
-    ports:
-      - "8080:8080"

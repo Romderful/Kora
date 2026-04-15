@@ -1,5 +1,7 @@
 set dotenv-load
 
+image     := env("KORA_IMAGE", "ghcr.io/romderful/kora")
+platforms := "linux/amd64,linux/arm64"
 pg_ready := "docker compose exec -T postgres pg_isready -U $POSTGRES_USER > /dev/null 2>&1"
 db_ready := "docker compose exec -T postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -c 'SELECT 1' > /dev/null 2>&1"
 
@@ -9,28 +11,71 @@ ensure-pg:
       echo "Waiting for PG..."; until {{ pg_ready }}; do sleep 0.3; done; }
     @until {{ db_ready }}; do sleep 0.3; done
 
-# Build and run everything in Docker
-up:
-    docker compose up --build -d
+# ---------- Development ----------
 
-# Run all tests
+# Run Kora locally with cargo (starts PG automatically)
+[group('dev')]
+dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just ensure-pg
+    trap 'docker compose down' EXIT
+    cargo run
+
+# Run all tests (starts PG automatically)
+[group('dev')]
 test:
     #!/usr/bin/env bash
     set -euo pipefail
-    was_up=false; docker compose ps api --format '{{{{.State}}}}' 2>/dev/null | grep -q running && was_up=true || true
     just ensure-pg
     cargo test --test '*' -- --include-ignored; rc=$?
-    $was_up || docker compose down
+    docker compose down
     exit $rc
 
-# Clippy + deny warnings
+# Run clippy lints
+[group('dev')]
 lint:
     cargo clippy -- -D clippy::all -D clippy::pedantic
 
-# Stop containers
-down:
-    docker compose down
+# ---------- Build & Push ----------
 
-# Stop containers + remove volumes
+# Build + push slim image (amd64 + arm64)
+[group('build')]
+build tag="latest":
+    docker buildx build --platform {{ platforms }} --provenance=false --build-arg EMBEDDED_PG=false -t {{ image }}:{{ tag }} --push .
+
+# Build + push all-in-one image (amd64 + arm64)
+[group('build')]
+build-embedded tag="latest-embedded":
+    docker buildx build --platform {{ platforms }} --provenance=false -t {{ image }}:{{ tag }} --push .
+
+# Build + push both images (slim last → featured on ghcr.io)
+[group('build')]
+release tag="latest":
+    just build-embedded {{ tag }}-embedded
+    just build {{ tag }}
+
+# ---------- Docker (local) ----------
+
+# Run slim image locally (needs DATABASE_URL)
+[group('docker')]
+run db_url:
+    docker run --rm --network host --name kora -e "DATABASE_URL={{ db_url }}" {{ image }}:latest
+
+# Run all-in-one image locally
+[group('docker')]
+run-embedded:
+    docker run --rm -p 8080:8080 --name kora {{ image }}:latest-embedded
+
+# Stop Kora and compose services
+[group('docker')]
+stop:
+    -docker stop kora
+    -docker compose down
+
+# Remove all containers, images, and volumes
+[group('docker')]
 clean:
-    docker compose down -v
+    -docker rm -f kora
+    -docker rmi {{ image }}:latest {{ image }}:latest-embedded
+    -docker compose down -v

@@ -46,8 +46,27 @@ async fn main() {
 // -- Helpers --
 
 async fn shutdown_signal() {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("failed to install CTRL+C handler");
+    let ctrl_c = tokio::signal::ctrl_c();
+
+    #[cfg(unix)]
+    {
+        let mut sigterm = tokio::signal::unix::signal(
+            tokio::signal::unix::SignalKind::terminate(),
+        )
+        .expect("failed to install SIGTERM handler");
+
+        tokio::select! {
+            result = ctrl_c => { result.expect("failed to listen for CTRL+C"); },
+            recv = sigterm.recv() => {
+                if recv.is_none() {
+                    tracing::warn!("SIGTERM stream closed unexpectedly");
+                }
+            },
+        }
+    }
+
+    #[cfg(not(unix))]
+    ctrl_c.await.expect("failed to install CTRL+C handler");
+
     tracing::info!("shutdown signal received");
 }

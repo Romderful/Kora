@@ -1,0 +1,8 @@
+target/
+.git/
+_bmad*/
+tests/
+docs/
+.env
+.env.*
+*.md

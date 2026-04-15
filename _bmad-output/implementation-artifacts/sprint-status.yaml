@@ -76,9 +76,9 @@ development_status:
   5-2-enforce-all-compatibility-modes: done
   epic-5-retrospective: optional
 
-  # ── Epic 6: Operations & Packaging ──
-  epic-6: in-progress
+  # ── Epic 6: Operations & Packaging ── DONE
+  epic-6: done
   6-1-registry-mode-control: done
   6-2-prometheus-metrics: done
-  6-3-docker-all-in-one-packaging: backlog
+  6-3-docker-all-in-one-packaging: done
   epic-6-retrospective: optional
