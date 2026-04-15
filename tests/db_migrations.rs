@@ -17,9 +17,18 @@ async fn migrations_create_all_tables() {
 
     let table_names: Vec<&str> = tables.iter().map(String::as_str).collect();
     assert!(table_names.contains(&"subjects"), "missing subjects table");
-    assert!(table_names.contains(&"schema_contents"), "missing schema_contents table");
-    assert!(table_names.contains(&"schema_versions"), "missing schema_versions table");
-    assert!(table_names.contains(&"schema_references"), "missing schema_references table");
+    assert!(
+        table_names.contains(&"schema_contents"),
+        "missing schema_contents table"
+    );
+    assert!(
+        table_names.contains(&"schema_versions"),
+        "missing schema_versions table"
+    );
+    assert!(
+        table_names.contains(&"schema_references"),
+        "missing schema_references table"
+    );
     assert!(table_names.contains(&"config"), "missing config table");
 }
 

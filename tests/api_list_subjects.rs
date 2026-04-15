@@ -40,11 +40,19 @@ async fn list_subjects_with_pagination() {
     let client = reqwest::Client::new();
 
     // limit=-1 (unlimited, default) returns 200.
-    let resp = client.get(format!("{base}/subjects?limit=-1")).send().await.unwrap();
+    let resp = client
+        .get(format!("{base}/subjects?limit=-1"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 
     // Large offset returns empty.
-    let resp = client.get(format!("{base}/subjects?offset=999999")).send().await.unwrap();
+    let resp = client
+        .get(format!("{base}/subjects?offset=999999"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let empty: Vec<String> = resp.json().await.unwrap();
     assert!(empty.is_empty());
@@ -62,16 +70,24 @@ async fn list_versions_with_pagination() {
 
     // First 2 versions.
     let resp = client
-        .get(format!("{base}/subjects/{subject}/versions?offset=0&limit=2"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/subjects/{subject}/versions?offset=0&limit=2"
+        ))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let versions: Vec<i32> = resp.json().await.unwrap();
     assert_eq!(versions, vec![1, 2]);
 
     // Skip first, get rest.
     let resp = client
-        .get(format!("{base}/subjects/{subject}/versions?offset=1&limit=10"))
-        .send().await.unwrap();
+        .get(format!(
+            "{base}/subjects/{subject}/versions?offset=1&limit=10"
+        ))
+        .send()
+        .await
+        .unwrap();
     let versions: Vec<i32> = resp.json().await.unwrap();
     assert_eq!(versions, vec![2, 3]);
 }
@@ -123,8 +139,14 @@ async fn list_subjects_deleted_only_returns_only_soft_deleted() {
     assert_eq!(resp.status(), StatusCode::OK);
     let names: Vec<String> = resp.json().await.unwrap();
 
-    assert!(names.contains(&deleted), "soft-deleted subject should appear");
-    assert!(!names.contains(&active), "active subject should NOT appear with deletedOnly");
+    assert!(
+        names.contains(&deleted),
+        "soft-deleted subject should appear"
+    );
+    assert!(
+        !names.contains(&active),
+        "active subject should NOT appear with deletedOnly"
+    );
 }
 
 #[tokio::test]
@@ -147,8 +169,14 @@ async fn list_subjects_deleted_only_takes_precedence_over_deleted() {
     assert_eq!(resp.status(), StatusCode::OK);
     let names: Vec<String> = resp.json().await.unwrap();
 
-    assert!(names.contains(&deleted), "soft-deleted subject should appear");
-    assert!(!names.contains(&active), "active subject should NOT appear — deletedOnly takes precedence");
+    assert!(
+        names.contains(&deleted),
+        "soft-deleted subject should appear"
+    );
+    assert!(
+        !names.contains(&active),
+        "active subject should NOT appear — deletedOnly takes precedence"
+    );
 }
 
 #[tokio::test]
@@ -193,14 +221,20 @@ async fn list_versions_deleted_only_returns_only_soft_deleted() {
     common::api::delete_version(&client, &base, &subject, "1").await;
 
     let resp = client
-        .get(format!("{base}/subjects/{subject}/versions?deletedOnly=true"))
+        .get(format!(
+            "{base}/subjects/{subject}/versions?deletedOnly=true"
+        ))
         .send()
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let versions: Vec<i32> = resp.json().await.unwrap();
 
-    assert_eq!(versions, vec![1], "only soft-deleted version 1 should appear");
+    assert_eq!(
+        versions,
+        vec![1],
+        "only soft-deleted version 1 should appear"
+    );
 }
 
 #[tokio::test]
@@ -249,7 +283,11 @@ async fn list_versions_deleted_only_with_deleted_as_negative() {
     assert_eq!(resp.status(), StatusCode::OK);
     let versions: Vec<i32> = resp.json().await.unwrap();
 
-    assert_eq!(versions, vec![-1], "deletedOnly + deletedAsNegative should return negative versions");
+    assert_eq!(
+        versions,
+        vec![-1],
+        "deletedOnly + deletedAsNegative should return negative versions"
+    );
 }
 
 #[tokio::test]

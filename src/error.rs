@@ -140,9 +140,9 @@ impl KoraError {
             | Self::SubjectCompatibilityNotConfigured(_)
             | Self::SubjectModeNotConfigured(_) => StatusCode::NOT_FOUND,
             Self::IncompatibleSchema => StatusCode::CONFLICT,
-            Self::BackendDataStore(_)
-            | Self::OperationTimeout
-            | Self::ForwardingError => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::BackendDataStore(_) | Self::OperationTimeout | Self::ForwardingError => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
         }
     }
 }

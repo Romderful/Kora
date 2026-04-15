@@ -168,14 +168,15 @@ fn is_wire_compatible(a: i32, b: i32) -> bool {
     }
     // int32 ↔ int64, uint32 ↔ uint64, sint32 ↔ sint64, fixed32 ↔ fixed64, sfixed32 ↔ sfixed64
     let pair = (a.min(b), a.max(b));
-    matches!(pair,
+    matches!(
+        pair,
         (TYPE_INT64, TYPE_INT32)       // 3, 5
         | (TYPE_UINT64, TYPE_UINT32)   // 4, 13
         | (TYPE_SFIXED32, TYPE_SFIXED64) // 15, 16
         | (TYPE_SINT32, TYPE_SINT64)   // 17, 18
         | (TYPE_FIXED64, TYPE_FIXED32) // 6, 7
         | (TYPE_STRING, TYPE_BYTES)    // 9, 12
-        | (TYPE_INT32, TYPE_ENUM)      // 5, 14
+        | (TYPE_INT32, TYPE_ENUM) // 5, 14
     )
 }
 
@@ -194,7 +195,11 @@ fn collect_enum_names(
     for m in msgs {
         if let Some(name) = &m.name {
             let nested_prefix = format!("{prefix}{name}.");
-            names.extend(collect_enum_names(&m.enum_type, &m.nested_type, &nested_prefix));
+            names.extend(collect_enum_names(
+                &m.enum_type,
+                &m.nested_type,
+                &nested_prefix,
+            ));
         }
     }
     names
@@ -250,7 +255,13 @@ fn compare_with_deps(
     let old_enums = collect_enum_names(&old_file.enum_type, &old_file.message_type, "");
     let new_enums = collect_enum_names(&new_file.enum_type, &new_file.message_type, "");
 
-    compare_messages(&old_file.message_type, &new_file.message_type, &old_enums, &new_enums, &mut diffs);
+    compare_messages(
+        &old_file.message_type,
+        &new_file.message_type,
+        &old_enums,
+        &new_enums,
+        &mut diffs,
+    );
     compare_enums(&old_file.enum_type, &new_file.enum_type, &mut diffs);
 
     // Resolve dependencies and compare external type references.
@@ -259,9 +270,12 @@ fn compare_with_deps(
 
     if !old_registry.is_empty() || !new_registry.is_empty() {
         compare_external_type_refs(
-            &old_file.message_type, &new_file.message_type,
-            &old_registry, &new_registry,
-            &old_enums, &new_enums,
+            &old_file.message_type,
+            &new_file.message_type,
+            &old_registry,
+            &new_registry,
+            &old_enums,
+            &new_enums,
             &mut diffs,
         );
     } else {
@@ -272,8 +286,12 @@ fn compare_with_deps(
             let old_local = collect_message_names(&old_file.message_type, "");
             let new_local = collect_message_names(&new_file.message_type, "");
             detect_import_type_changes(
-                &old_file.message_type, &new_file.message_type,
-                &old_local, &new_local, &old_enums, &new_enums,
+                &old_file.message_type,
+                &new_file.message_type,
+                &old_local,
+                &new_local,
+                &old_enums,
+                &new_enums,
                 &mut diffs,
             );
         }
@@ -307,16 +325,43 @@ fn compare_messages(
             if old_idx != new_idx {
                 diffs.push((DiffType::MessageMoved, format!("Message '{name}' moved")));
             }
-            compare_fields(&old_msg.field, &new_msg.field, old_enums, new_enums, name, diffs);
-            detect_oneof_field_moves(&old_msg.field, &new_msg.field, &old_msg.oneof_decl, &new_msg.oneof_decl, name, diffs);
+            compare_fields(
+                &old_msg.field,
+                &new_msg.field,
+                old_enums,
+                new_enums,
+                name,
+                diffs,
+            );
+            detect_oneof_field_moves(
+                &old_msg.field,
+                &new_msg.field,
+                &old_msg.oneof_decl,
+                &new_msg.oneof_decl,
+                name,
+                diffs,
+            );
             compare_enums(&old_msg.enum_type, &new_msg.enum_type, diffs);
-            compare_messages(&old_msg.nested_type, &new_msg.nested_type, old_enums, new_enums, diffs);
+            compare_messages(
+                &old_msg.nested_type,
+                &new_msg.nested_type,
+                old_enums,
+                new_enums,
+                diffs,
+            );
             compare_oneofs(
-                &old_msg.oneof_decl, &new_msg.oneof_decl,
-                &old_msg.field, &new_msg.field, name, diffs,
+                &old_msg.oneof_decl,
+                &new_msg.oneof_decl,
+                &old_msg.field,
+                &new_msg.field,
+                name,
+                diffs,
             );
         } else {
-            diffs.push((DiffType::MessageRemoved, format!("Message '{name}' removed")));
+            diffs.push((
+                DiffType::MessageRemoved,
+                format!("Message '{name}' removed"),
+            ));
         }
     }
 
@@ -408,8 +453,10 @@ fn compare_field_pair(
     let named_type_differs = !type_names_equal(old_f.type_name.as_ref(), new_f.type_name.as_ref())
         || (old_f.type_name.is_some() && new_f.type_name.is_some() && old_type != new_type);
     if named_type_differs
-        && (old_type == TYPE_MESSAGE || old_type == TYPE_ENUM
-            || new_type == TYPE_MESSAGE || new_type == TYPE_ENUM)
+        && (old_type == TYPE_MESSAGE
+            || old_type == TYPE_ENUM
+            || new_type == TYPE_MESSAGE
+            || new_type == TYPE_ENUM)
         && !is_wire_compatible(old_type, new_type)
     {
         diffs.push((
@@ -421,8 +468,10 @@ fn compare_field_pair(
     let old_label = old_f.label.unwrap_or(1);
     let new_label = new_f.label.unwrap_or(1);
     if old_label != new_label {
-        let is_length_delimited = old_type == TYPE_STRING || old_type == TYPE_BYTES
-            || old_type == TYPE_MESSAGE || old_type == TYPE_ENUM;
+        let is_length_delimited = old_type == TYPE_STRING
+            || old_type == TYPE_BYTES
+            || old_type == TYPE_MESSAGE
+            || old_type == TYPE_ENUM;
         let dt = if is_length_delimited {
             DiffType::FieldStringOrBytesLabelChanged
         } else {
@@ -467,7 +516,9 @@ fn detect_oneof_field_moves(
 
     for new_f in new_fields {
         let Some(num) = new_f.number else { continue };
-        let Some(oneof_idx) = new_f.oneof_index else { continue };
+        let Some(oneof_idx) = new_f.oneof_index else {
+            continue;
+        };
 
         if old_by_num.get(&num).is_none_or(|f| f.oneof_index.is_some()) {
             continue; // not moved from regular to oneof
@@ -475,9 +526,11 @@ fn detect_oneof_field_moves(
 
         // Check if the new oneof contains any field that was in a oneof in old.
         // This detects moves to renamed oneofs (not just same-name oneofs).
-        let has_existing_oneof_field = new_oneof_groups
-            .get(&oneof_idx)
-            .is_some_and(|fields| fields.iter().any(|&n| n != num && old_oneof_field_nums.contains(&n)));
+        let has_existing_oneof_field = new_oneof_groups.get(&oneof_idx).is_some_and(|fields| {
+            fields
+                .iter()
+                .any(|&n| n != num && old_oneof_field_nums.contains(&n))
+        });
 
         if has_existing_oneof_field {
             moved_to_existing += 1;
@@ -519,18 +572,30 @@ fn compare_oneofs(
     msg_name: &str,
     diffs: &mut Vec<(DiffType, String)>,
 ) {
-    let old_names: HashSet<&str> = old_oneofs.iter().filter_map(|o| o.name.as_deref()).collect();
-    let new_names: HashSet<&str> = new_oneofs.iter().filter_map(|o| o.name.as_deref()).collect();
+    let old_names: HashSet<&str> = old_oneofs
+        .iter()
+        .filter_map(|o| o.name.as_deref())
+        .collect();
+    let new_names: HashSet<&str> = new_oneofs
+        .iter()
+        .filter_map(|o| o.name.as_deref())
+        .collect();
 
     for name in &new_names {
         if !old_names.contains(name) {
-            diffs.push((DiffType::OneofAdded, format!("{msg_name}: oneof '{name}' added")));
+            diffs.push((
+                DiffType::OneofAdded,
+                format!("{msg_name}: oneof '{name}' added"),
+            ));
         }
     }
 
     for name in &old_names {
         if !new_names.contains(name) {
-            diffs.push((DiffType::OneofRemoved, format!("{msg_name}: oneof '{name}' removed")));
+            diffs.push((
+                DiffType::OneofRemoved,
+                format!("{msg_name}: oneof '{name}' removed"),
+            ));
         }
     }
 
@@ -539,7 +604,10 @@ fn compare_oneofs(
         if !new_names.contains(oneof_name) {
             continue;
         }
-        if let Some(ni) = new_oneofs.iter().position(|o| o.name.as_deref() == Some(oneof_name)) {
+        if let Some(ni) = new_oneofs
+            .iter()
+            .position(|o| o.name.as_deref() == Some(oneof_name))
+        {
             let old_oneof_fields: HashSet<i32> = old_fields
                 .iter()
                 .filter(|f| f.oneof_index == Some(i32::try_from(idx).unwrap_or(0)))
@@ -635,13 +703,19 @@ fn compare_enum_values(
                 ));
             }
         } else {
-            diffs.push((DiffType::EnumConstRemoved, format!("{enum_name}.{name}: removed")));
+            diffs.push((
+                DiffType::EnumConstRemoved,
+                format!("{enum_name}.{name}: removed"),
+            ));
         }
     }
 
     for name in new_by_name.keys() {
         if !old_by_name.contains_key(name) {
-            diffs.push((DiffType::EnumConstAdded, format!("{enum_name}.{name}: added")));
+            diffs.push((
+                DiffType::EnumConstAdded,
+                format!("{enum_name}.{name}: added"),
+            ));
         }
     }
 }
@@ -649,16 +723,16 @@ fn compare_enum_values(
 // -- Helpers --
 
 /// Collect all message names (fully qualified) from a file descriptor.
-fn collect_message_names(
-    msgs: &[prost_types::DescriptorProto],
-    prefix: &str,
-) -> HashSet<String> {
+fn collect_message_names(msgs: &[prost_types::DescriptorProto], prefix: &str) -> HashSet<String> {
     let mut names = HashSet::new();
     for m in msgs {
         if let Some(name) = &m.name {
             let qualified = format!("{prefix}{name}");
             names.insert(qualified.clone());
-            names.extend(collect_message_names(&m.nested_type, &format!("{qualified}.")));
+            names.extend(collect_message_names(
+                &m.nested_type,
+                &format!("{qualified}."),
+            ));
         }
     }
     names
@@ -687,23 +761,39 @@ fn detect_import_type_changes(
         .collect();
 
     for (name, old_msg) in &old_by_name {
-        let Some(new_msg) = new_by_name.get(name) else { continue };
-        let old_fields: HashMap<i32, &prost_types::FieldDescriptorProto> = old_msg.field
-            .iter().filter_map(|f| f.number.map(|n| (n, f))).collect();
-        let new_fields: HashMap<i32, &prost_types::FieldDescriptorProto> = new_msg.field
-            .iter().filter_map(|f| f.number.map(|n| (n, f))).collect();
+        let Some(new_msg) = new_by_name.get(name) else {
+            continue;
+        };
+        let old_fields: HashMap<i32, &prost_types::FieldDescriptorProto> = old_msg
+            .field
+            .iter()
+            .filter_map(|f| f.number.map(|n| (n, f)))
+            .collect();
+        let new_fields: HashMap<i32, &prost_types::FieldDescriptorProto> = new_msg
+            .field
+            .iter()
+            .filter_map(|f| f.number.map(|n| (n, f)))
+            .collect();
 
         for (&num, old_f) in &old_fields {
-            let Some(new_f) = new_fields.get(&num) else { continue };
-            let Some(old_tn) = &old_f.type_name else { continue };
-            let Some(new_tn) = &new_f.type_name else { continue };
+            let Some(new_f) = new_fields.get(&num) else {
+                continue;
+            };
+            let Some(old_tn) = &old_f.type_name else {
+                continue;
+            };
+            let Some(new_tn) = &new_f.type_name else {
+                continue;
+            };
             if old_tn != new_tn {
                 continue; // already handled by compare_field_pair
             }
             // Same type_name but imports changed — check if type is external.
             let qualified = old_tn.trim_start_matches('.');
-            let is_local = old_local_types.contains(qualified) || old_enums.contains(qualified)
-                || new_local_types.contains(qualified) || new_enums.contains(qualified);
+            let is_local = old_local_types.contains(qualified)
+                || old_enums.contains(qualified)
+                || new_local_types.contains(qualified)
+                || new_enums.contains(qualified);
             if !is_local {
                 let fname = old_f.name.as_deref().unwrap_or("?");
                 diffs.push((
@@ -739,18 +829,32 @@ fn compare_external_type_refs(
         .collect();
 
     for (name, old_msg) in &old_by_name {
-        let Some(new_msg) = new_by_name.get(name) else { continue };
+        let Some(new_msg) = new_by_name.get(name) else {
+            continue;
+        };
         let old_fields: HashMap<i32, &prost_types::FieldDescriptorProto> = old_msg
-            .field.iter().filter_map(|f| f.number.map(|n| (n, f))).collect();
+            .field
+            .iter()
+            .filter_map(|f| f.number.map(|n| (n, f)))
+            .collect();
         let new_fields: HashMap<i32, &prost_types::FieldDescriptorProto> = new_msg
-            .field.iter().filter_map(|f| f.number.map(|n| (n, f))).collect();
+            .field
+            .iter()
+            .filter_map(|f| f.number.map(|n| (n, f)))
+            .collect();
 
         for (&num, old_f) in &old_fields {
-            let Some(new_f) = new_fields.get(&num) else { continue };
+            let Some(new_f) = new_fields.get(&num) else {
+                continue;
+            };
 
             // Both must reference named types.
-            let Some(old_tn) = &old_f.type_name else { continue };
-            let Some(new_tn) = &new_f.type_name else { continue };
+            let Some(old_tn) = &old_f.type_name else {
+                continue;
+            };
+            let Some(new_tn) = &new_f.type_name else {
+                continue;
+            };
 
             let old_q = old_tn.trim_start_matches('.');
             let new_q = new_tn.trim_start_matches('.');
@@ -762,9 +866,8 @@ fn compare_external_type_refs(
             match (old_def, new_def) {
                 (Some(old_def), Some(new_def)) => {
                     // Both resolved — compare the dependency message definitions.
-                    let sub_diffs = compare_dep_message_fields(
-                        old_def, new_def, old_enums, new_enums,
-                    );
+                    let sub_diffs =
+                        compare_dep_message_fields(old_def, new_def, old_enums, new_enums);
                     if !sub_diffs.is_empty() {
                         let fname = old_f.name.as_deref().unwrap_or("?");
                         diffs.push((
@@ -799,9 +902,15 @@ fn compare_dep_message_fields(
     let msg_name = new_msg.name.as_deref().unwrap_or("?");
 
     let old_fields: HashMap<i32, &prost_types::FieldDescriptorProto> = old_msg
-        .field.iter().filter_map(|f| f.number.map(|n| (n, f))).collect();
+        .field
+        .iter()
+        .filter_map(|f| f.number.map(|n| (n, f)))
+        .collect();
     let new_fields: HashMap<i32, &prost_types::FieldDescriptorProto> = new_msg
-        .field.iter().filter_map(|f| f.number.map(|n| (n, f))).collect();
+        .field
+        .iter()
+        .filter_map(|f| f.number.map(|n| (n, f)))
+        .collect();
 
     for (&num, old_f) in &old_fields {
         if let Some(new_f) = new_fields.get(&num) {
@@ -822,14 +931,23 @@ fn compare_dep_message_fields(
 
     // Recurse into nested messages.
     let old_nested: HashMap<&str, &prost_types::DescriptorProto> = old_msg
-        .nested_type.iter().filter_map(|m| m.name.as_deref().map(|n| (n, m))).collect();
+        .nested_type
+        .iter()
+        .filter_map(|m| m.name.as_deref().map(|n| (n, m)))
+        .collect();
     let new_nested: HashMap<&str, &prost_types::DescriptorProto> = new_msg
-        .nested_type.iter().filter_map(|m| m.name.as_deref().map(|n| (n, m))).collect();
+        .nested_type
+        .iter()
+        .filter_map(|m| m.name.as_deref().map(|n| (n, m)))
+        .collect();
 
     for (nested_name, old_nested_msg) in &old_nested {
         if let Some(new_nested_msg) = new_nested.get(nested_name) {
             diffs.extend(compare_dep_message_fields(
-                old_nested_msg, new_nested_msg, old_enums, new_enums,
+                old_nested_msg,
+                new_nested_msg,
+                old_enums,
+                new_enums,
             ));
         }
     }

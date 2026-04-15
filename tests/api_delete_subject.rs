@@ -47,12 +47,24 @@ async fn soft_delete_subject_included_with_deleted_flag() {
     common::api::delete_subject(&client, &base, &deleted).await;
 
     let names = common::api::list_subjects(&client, &base, common::INCLUDE_DELETED).await;
-    assert!(names.contains(&active), "active subject missing from ?deleted=true");
-    assert!(names.contains(&deleted), "deleted subject missing from ?deleted=true");
+    assert!(
+        names.contains(&active),
+        "active subject missing from ?deleted=true"
+    );
+    assert!(
+        names.contains(&deleted),
+        "deleted subject missing from ?deleted=true"
+    );
 
     let names = common::api::list_subjects(&client, &base, common::ACTIVE_ONLY).await;
-    assert!(names.contains(&active), "active subject missing from default list");
-    assert!(!names.contains(&deleted), "deleted subject should NOT appear in default list");
+    assert!(
+        names.contains(&active),
+        "active subject missing from default list"
+    );
+    assert!(
+        !names.contains(&deleted),
+        "deleted subject should NOT appear in default list"
+    );
 }
 
 #[tokio::test]
@@ -88,7 +100,8 @@ async fn soft_delete_version_included_with_deleted_flag() {
     let versions = common::api::list_versions(&client, &base, &subject, common::ACTIVE_ONLY).await;
     assert_eq!(versions, vec![1]);
 
-    let versions = common::api::list_versions(&client, &base, &subject, common::INCLUDE_DELETED).await;
+    let versions =
+        common::api::list_versions(&client, &base, &subject, common::INCLUDE_DELETED).await;
     assert_eq!(versions, vec![1, 2]);
 }
 

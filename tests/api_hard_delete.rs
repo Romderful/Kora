@@ -22,12 +22,11 @@ async fn hard_delete_subject_after_soft_delete_succeeds() {
     let versions: Vec<i32> = resp.json().await.unwrap();
     assert_eq!(versions, vec![1, 2]);
 
-    let count: i64 =
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM subjects WHERE name = $1")
-            .bind(&subject)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+    let count: i64 = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM subjects WHERE name = $1")
+        .bind(&subject)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
     assert_eq!(count, 0, "subject should be permanently removed");
 }
 
@@ -47,8 +46,13 @@ async fn hard_delete_version_after_soft_delete_succeeds() {
     let body: i32 = resp.json().await.unwrap();
     assert_eq!(body, 2);
 
-    let versions = common::api::list_versions(&client, &base, &subject, common::INCLUDE_DELETED).await;
-    assert_eq!(versions, vec![1], "hard-deleted version should not appear even with ?deleted=true");
+    let versions =
+        common::api::list_versions(&client, &base, &subject, common::INCLUDE_DELETED).await;
+    assert_eq!(
+        versions,
+        vec![1],
+        "hard-deleted version should not appear even with ?deleted=true"
+    );
 }
 
 #[tokio::test]

@@ -25,12 +25,10 @@ pub const AVRO_SCHEMA_V1: &str =
     r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"}]}"#;
 
 /// A valid Avro schema with two fields — backward-compatible with V1 (optional name with default).
-pub const AVRO_SCHEMA_V2: &str =
-    r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":["null","string"],"default":null}]}"#;
+pub const AVRO_SCHEMA_V2: &str = r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":["null","string"],"default":null}]}"#;
 
 /// A valid Avro schema with three fields — backward-compatible with V2 (optional active with default).
-pub const AVRO_SCHEMA_V3: &str =
-    r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":["null","string"],"default":null},{"name":"active","type":["null","boolean"],"default":null}]}"#;
+pub const AVRO_SCHEMA_V3: &str = r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":["null","string"],"default":null},{"name":"active","type":["null","boolean"],"default":null}]}"#;
 
 /// A valid Avro schema with a different record name (for check-schema tests).
 pub const AVRO_SCHEMA_OTHER: &str =
@@ -39,8 +37,7 @@ pub const AVRO_SCHEMA_OTHER: &str =
 // -- JSON Schema Fixtures --
 
 /// A valid JSON Schema with one property.
-pub const JSON_SCHEMA_V1: &str =
-    r#"{"type":"object","properties":{"name":{"type":"string"}}}"#;
+pub const JSON_SCHEMA_V1: &str = r#"{"type":"object","properties":{"name":{"type":"string"}}}"#;
 
 /// A valid JSON Schema with two properties (different from V1).
 pub const JSON_SCHEMA_V2: &str =
@@ -49,8 +46,7 @@ pub const JSON_SCHEMA_V2: &str =
 // -- Protobuf Fixtures --
 
 /// A valid Protobuf schema with one field.
-pub const PROTO_SCHEMA_V1: &str =
-    "syntax = \"proto3\";\nmessage Test {\n  int32 id = 1;\n}";
+pub const PROTO_SCHEMA_V1: &str = "syntax = \"proto3\";\nmessage Test {\n  int32 id = 1;\n}";
 
 /// A valid Protobuf schema with two fields (different from V1).
 pub const PROTO_SCHEMA_V2: &str =
@@ -63,16 +59,13 @@ pub const COMPAT_AVRO_V1: &str =
     r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"}]}"#;
 
 /// Backward-compatible evolution: adds optional field with null default.
-pub const COMPAT_AVRO_V2: &str =
-    r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":["null","string"],"default":null}]}"#;
+pub const COMPAT_AVRO_V2: &str = r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":["null","string"],"default":null}]}"#;
 
 /// Backward-compatible evolution of V2: adds another optional field.
-pub const COMPAT_AVRO_V3: &str =
-    r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":["null","string"],"default":null},{"name":"active","type":["null","boolean"],"default":null}]}"#;
+pub const COMPAT_AVRO_V3: &str = r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"name","type":["null","string"],"default":null},{"name":"active","type":["null","boolean"],"default":null}]}"#;
 
 /// Backward-INCOMPATIBLE schema: adds required field without default.
-pub const COMPAT_AVRO_INCOMPAT: &str =
-    r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"email","type":"string"}]}"#;
+pub const COMPAT_AVRO_INCOMPAT: &str = r#"{"type":"record","name":"Test","fields":[{"name":"id","type":"int"},{"name":"email","type":"string"}]}"#;
 
 // -- Helpers --
 
@@ -114,10 +107,22 @@ fn prometheus_handle() -> PrometheusHandle {
 
             // Mirror the describe_*! calls from main.rs so tests get HELP/TYPE metadata.
             metrics::describe_counter!("http_requests_total", "Total HTTP requests served");
-            metrics::describe_histogram!("http_request_duration_seconds", "HTTP request latency in seconds");
-            metrics::describe_gauge!("kora_schema_count", "Number of unique schema contents in the registry");
-            metrics::describe_gauge!("kora_db_connections_in_use", "Database connections currently executing queries");
-            metrics::describe_gauge!("kora_db_connections_idle", "Idle database connections in the pool");
+            metrics::describe_histogram!(
+                "http_request_duration_seconds",
+                "HTTP request latency in seconds"
+            );
+            metrics::describe_gauge!(
+                "kora_schema_count",
+                "Number of unique schema contents in the registry"
+            );
+            metrics::describe_gauge!(
+                "kora_db_connections_in_use",
+                "Database connections currently executing queries"
+            );
+            metrics::describe_gauge!(
+                "kora_db_connections_idle",
+                "Idle database connections in the pool"
+            );
 
             handle
         })
@@ -136,9 +141,7 @@ pub async fn spawn_server() -> String {
     let base = format!("http://127.0.0.1:{}", addr.port());
 
     tokio::spawn(async move {
-        axum::serve(listener, app)
-            .await
-            .expect("server should run");
+        axum::serve(listener, app).await.expect("server should run");
     });
 
     base

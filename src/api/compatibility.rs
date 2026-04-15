@@ -83,7 +83,9 @@ pub async fn get_global_compatibility(
 ) -> Result<impl IntoResponse, KoraError> {
     let level = compatibility::get_global_level(&pool).await?;
     let normalize = compatibility::get_global_normalize(&pool).await?;
-    Ok(Json(serde_json::json!({ "compatibilityLevel": level, "normalize": normalize })))
+    Ok(Json(
+        serde_json::json!({ "compatibilityLevel": level, "normalize": normalize }),
+    ))
 }
 
 /// Update the global compatibility configuration.
@@ -99,7 +101,9 @@ pub async fn set_global_compatibility(
 ) -> Result<impl IntoResponse, KoraError> {
     validate_level(&body.compatibility)?;
     let level = compatibility::set_global_level(&pool, &body.compatibility, body.normalize).await?;
-    Ok(Json(serde_json::json!({ "compatibility": level, "normalize": body.normalize })))
+    Ok(Json(
+        serde_json::json!({ "compatibility": level, "normalize": body.normalize }),
+    ))
 }
 
 /// Get the compatibility configuration for a subject.
@@ -118,15 +122,21 @@ pub async fn get_subject_compatibility(
 ) -> Result<impl IntoResponse, KoraError> {
     // Confluent does not check subject existence — only config existence.
     if let Some(level) = compatibility::get_subject_level(&pool, &subject).await? {
-        let normalize = compatibility::get_subject_normalize(&pool, &subject).await?.unwrap_or(false);
-        return Ok(Json(serde_json::json!({ "compatibilityLevel": level, "normalize": normalize })));
+        let normalize = compatibility::get_subject_normalize(&pool, &subject)
+            .await?
+            .unwrap_or(false);
+        return Ok(Json(
+            serde_json::json!({ "compatibilityLevel": level, "normalize": normalize }),
+        ));
     }
 
     // No per-subject config — fall back or return 40408.
     if params.default_to_global {
         let level = compatibility::get_global_level(&pool).await?;
         let normalize = compatibility::get_global_normalize(&pool).await?;
-        Ok(Json(serde_json::json!({ "compatibilityLevel": level, "normalize": normalize })))
+        Ok(Json(
+            serde_json::json!({ "compatibilityLevel": level, "normalize": normalize }),
+        ))
     } else {
         Err(KoraError::SubjectCompatibilityNotConfigured(subject))
     }
@@ -147,8 +157,12 @@ pub async fn set_subject_compatibility(
 ) -> Result<impl IntoResponse, KoraError> {
     // Confluent allows setting config on any subject name (no existence check).
     validate_level(&body.compatibility)?;
-    let level = compatibility::set_subject_level(&pool, &subject, &body.compatibility, body.normalize).await?;
-    Ok(Json(serde_json::json!({ "compatibility": level, "normalize": body.normalize })))
+    let level =
+        compatibility::set_subject_level(&pool, &subject, &body.compatibility, body.normalize)
+            .await?;
+    Ok(Json(
+        serde_json::json!({ "compatibility": level, "normalize": body.normalize }),
+    ))
 }
 
 /// Delete global compatibility configuration (reset to BACKWARD).
@@ -163,7 +177,9 @@ pub async fn delete_global_compatibility(
 ) -> Result<impl IntoResponse, KoraError> {
     let (prev_level, prev_normalize) = compatibility::delete_global_level(&pool).await?;
     // Confluent returns the previous Config object (before deletion).
-    Ok(Json(serde_json::json!({ "compatibilityLevel": prev_level, "normalize": prev_normalize })))
+    Ok(Json(
+        serde_json::json!({ "compatibilityLevel": prev_level, "normalize": prev_normalize }),
+    ))
 }
 
 /// Delete per-subject compatibility configuration.
@@ -184,7 +200,9 @@ pub async fn delete_subject_compatibility(
         .await?
         .ok_or(KoraError::SubjectNotFound)?;
     // Confluent returns the previous Config object (before deletion).
-    Ok(Json(serde_json::json!({ "compatibilityLevel": prev_level, "normalize": prev_normalize })))
+    Ok(Json(
+        serde_json::json!({ "compatibilityLevel": prev_level, "normalize": prev_normalize }),
+    ))
 }
 
 // -- Test handlers --
@@ -212,7 +230,11 @@ pub async fn test_compatibility_by_version(
     let direction = schema::CompatDirection::from_level(&level);
     let result = schema::check_compatibility(format, &body.schema, &existing.schema, direction)?;
 
-    Ok(Json(compat_response(result.is_compatible, &result.messages, params.verbose)))
+    Ok(Json(compat_response(
+        result.is_compatible,
+        &result.messages,
+        params.verbose,
+    )))
 }
 
 /// Test schema compatibility against all versions of a subject.
@@ -231,7 +253,8 @@ pub async fn test_compatibility_against_all_versions(
     let (format, body) = parse_compat_request(body)?;
 
     // Confluent: nonexistent subject → is_compatible: true (no versions to check).
-    let version_nums = schemas::list_schema_versions(&pool, &subject, false, false, false, 0, -1).await?;
+    let version_nums =
+        schemas::list_schema_versions(&pool, &subject, false, false, false, 0, -1).await?;
     if version_nums.is_empty() {
         return Ok(Json(compat_response(true, &[], params.verbose)));
     }
@@ -254,14 +277,19 @@ pub async fn test_compatibility_against_all_versions(
             continue;
         }
 
-        let result = schema::check_compatibility(format, &body.schema, &existing.schema, direction)?;
+        let result =
+            schema::check_compatibility(format, &body.schema, &existing.schema, direction)?;
         if !result.is_compatible {
             is_compatible = false;
         }
         all_messages.extend(result.messages);
     }
 
-    Ok(Json(compat_response(is_compatible, &all_messages, params.verbose)))
+    Ok(Json(compat_response(
+        is_compatible,
+        &all_messages,
+        params.verbose,
+    )))
 }
 
 // -- Helpers --
@@ -277,7 +305,10 @@ fn parse_compat_request(
 }
 
 /// Verify that the new schema type matches the existing one.
-fn check_type_match(format: SchemaFormat, existing: &schemas::SchemaVersion) -> Result<(), KoraError> {
+fn check_type_match(
+    format: SchemaFormat,
+    existing: &schemas::SchemaVersion,
+) -> Result<(), KoraError> {
     let existing_format = SchemaFormat::from_optional(Some(&existing.schema_type))?;
     if format != existing_format {
         return Err(KoraError::InvalidSchema(format!(

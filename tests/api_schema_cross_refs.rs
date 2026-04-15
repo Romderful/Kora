@@ -186,7 +186,11 @@ async fn get_subjects_by_schema_id_with_deleted_includes_soft_deleted() {
         .await
         .unwrap();
     let subjects: Vec<String> = resp.json().await.unwrap();
-    assert_eq!(subjects, vec![subject], "deleted=true should include soft-deleted subject");
+    assert_eq!(
+        subjects,
+        vec![subject],
+        "deleted=true should include soft-deleted subject"
+    );
 }
 
 #[tokio::test]
@@ -200,7 +204,9 @@ async fn get_subjects_by_schema_id_with_subject_filter() {
     let id = common::api::register_schema(&client, &base, &subject, &schema).await;
 
     let resp = client
-        .get(format!("{base}/schemas/ids/{id}/subjects?subject={subject}"))
+        .get(format!(
+            "{base}/schemas/ids/{id}/subjects?subject={subject}"
+        ))
         .send()
         .await
         .unwrap();
@@ -213,7 +219,10 @@ async fn get_subjects_by_schema_id_with_subject_filter() {
         .await
         .unwrap();
     let subjects: Vec<String> = resp.json().await.unwrap();
-    assert!(subjects.is_empty(), "non-matching subject filter should return empty");
+    assert!(
+        subjects.is_empty(),
+        "non-matching subject filter should return empty"
+    );
 }
 
 #[tokio::test]
@@ -236,7 +245,11 @@ async fn get_versions_by_schema_id_with_deleted_includes_soft_deleted() {
         .await
         .unwrap();
     let versions: Vec<serde_json::Value> = resp.json().await.unwrap();
-    assert_eq!(versions.len(), 1, "deleted=true should include soft-deleted versions");
+    assert_eq!(
+        versions.len(),
+        1,
+        "deleted=true should include soft-deleted versions"
+    );
     assert_eq!(versions[0]["subject"], subject);
     assert_eq!(versions[0]["version"], 1);
 }
@@ -252,7 +265,9 @@ async fn get_versions_by_schema_id_with_subject_filter() {
     let id = common::api::register_schema(&client, &base, &subject, &schema).await;
 
     let resp = client
-        .get(format!("{base}/schemas/ids/{id}/versions?subject={subject}"))
+        .get(format!(
+            "{base}/schemas/ids/{id}/versions?subject={subject}"
+        ))
         .send()
         .await
         .unwrap();
@@ -266,7 +281,10 @@ async fn get_versions_by_schema_id_with_subject_filter() {
         .await
         .unwrap();
     let versions: Vec<serde_json::Value> = resp.json().await.unwrap();
-    assert!(versions.is_empty(), "non-matching subject filter should return empty");
+    assert!(
+        versions.is_empty(),
+        "non-matching subject filter should return empty"
+    );
 }
 
 // -- Global dedup: same content under multiple subjects --
@@ -282,7 +300,10 @@ async fn same_schema_different_subjects_returns_same_id() {
     let id1 = common::api::register_schema(&client, &base, &s1, &schema).await;
     let id2 = common::api::register_schema(&client, &base, &s2, &schema).await;
 
-    assert_eq!(id1, id2, "identical content under different subjects should share the same global ID");
+    assert_eq!(
+        id1, id2,
+        "identical content under different subjects should share the same global ID"
+    );
 }
 
 #[tokio::test]
@@ -321,7 +342,11 @@ async fn cross_ref_versions_returns_multiple_subject_versions() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let versions: Vec<serde_json::Value> = resp.json().await.unwrap();
-    assert_eq!(versions.len(), 2, "cross-ref should return version entries for both subjects");
+    assert_eq!(
+        versions.len(),
+        2,
+        "cross-ref should return version entries for both subjects"
+    );
 }
 
 #[tokio::test]
@@ -366,7 +391,11 @@ async fn content_survives_version_hard_delete() {
     common::api::hard_delete_subject(&client, &base, &s1).await;
 
     let resp = common::api::get_schema_by_id(&client, &base, id).await;
-    assert_eq!(resp.status(), StatusCode::OK, "content should survive hard-delete of one subject");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "content should survive hard-delete of one subject"
+    );
 
     let resp = common::api::get_subjects_by_schema_id(&client, &base, id).await;
     let subjects: Vec<String> = resp.json().await.unwrap();

@@ -13,7 +13,8 @@ use kora::schema::avro::check_compatibility;
 // Schema definitions — exact replicas from the Confluent Java test.
 // ---------------------------------------------------------------------------
 
-const SCHEMA1: &str = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"}]}"#;
+const SCHEMA1: &str =
+    r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"}]}"#;
 
 const SCHEMA2: &str = r#"{"type":"record","name":"myrecord","fields":[{"type":"string","name":"f1"},{"type":"string","name":"f2","default":"foo"}]}"#;
 
@@ -42,7 +43,9 @@ fn is_compatible(new: &str, existing: &str, direction: CompatDirection) -> bool 
 
 /// Transitive check: new schema must be compatible with ALL existing schemas.
 fn is_compatible_transitive(new: &str, existing: &[&str], direction: CompatDirection) -> bool {
-    existing.iter().all(|old| is_compatible(new, old, direction))
+    existing
+        .iter()
+        .all(|old| is_compatible(new, old, direction))
 }
 
 // ---------------------------------------------------------------------------
@@ -53,7 +56,10 @@ fn is_compatible_transitive(new: &str, existing: &[&str], direction: CompatDirec
 fn confluent_avro_bad_default_null() {
     // Confluent: assertNotNull(AvroUtils.parseSchema(badDefaultNullString))
     let result = kora::schema::avro::parse(BAD_DEFAULT_NULL);
-    assert!(result.is_ok(), "schema with \"null\" default string should parse: {result:?}");
+    assert!(
+        result.is_ok(),
+        "schema with \"null\" default string should parse: {result:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------

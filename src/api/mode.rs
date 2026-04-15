@@ -15,7 +15,13 @@ use crate::storage::mode;
 // -- Types --
 
 /// Valid registry modes matching the Confluent Schema Registry spec.
-pub const VALID_MODES: &[&str] = &["READWRITE", "READONLY", "READONLY_OVERRIDE", "IMPORT", "FORWARD"];
+pub const VALID_MODES: &[&str] = &[
+    "READWRITE",
+    "READONLY",
+    "READONLY_OVERRIDE",
+    "IMPORT",
+    "FORWARD",
+];
 
 /// Request body for mode updates.
 #[derive(Debug, Deserialize)]

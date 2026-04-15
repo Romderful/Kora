@@ -8,9 +8,9 @@ use axum::{
 use serde::Deserialize;
 use sqlx::PgPool;
 
+use crate::api::mode::enforce_writable;
 use crate::error::KoraError;
 use crate::schema::{self, SchemaFormat};
-use crate::api::mode::enforce_writable;
 use crate::storage::{compatibility, references, schemas, subjects};
 use crate::types::SchemaReference;
 
@@ -169,8 +169,8 @@ pub async fn register_schema(
     let parsed = schema::parse(format, &body.schema)?;
 
     // Resolve effective normalize: explicit param OR subject/global config.
-    let normalize = params.normalize
-        || compatibility::get_effective_normalize(&pool, &subject).await?;
+    let normalize =
+        params.normalize || compatibility::get_effective_normalize(&pool, &subject).await?;
 
     // Enforce compatibility mode before registration.
     let level = compatibility::get_effective_compatibility(&pool, &subject).await?;
@@ -179,10 +179,13 @@ pub async fn register_schema(
         let is_transitive = level.contains("TRANSITIVE");
         let versions_to_check: Vec<schemas::SchemaVersion> = if is_transitive {
             // Transitive: check against ALL active versions.
-            let nums = schemas::list_schema_versions(&pool, &subject, false, false, false, 0, -1).await?;
+            let nums =
+                schemas::list_schema_versions(&pool, &subject, false, false, false, 0, -1).await?;
             let mut versions = Vec::with_capacity(nums.len());
             for v in nums {
-                if let Some(sv) = schemas::find_schema_by_subject_version(&pool, &subject, v, false).await? {
+                if let Some(sv) =
+                    schemas::find_schema_by_subject_version(&pool, &subject, v, false).await?
+                {
                     versions.push(sv);
                 }
             }
@@ -197,13 +200,15 @@ pub async fn register_schema(
 
         for existing in &versions_to_check {
             // Skip type-mismatched versions (subject may have mixed types under NONE then switched).
-            let Ok(existing_format) = SchemaFormat::from_optional(Some(&existing.schema_type)) else {
+            let Ok(existing_format) = SchemaFormat::from_optional(Some(&existing.schema_type))
+            else {
                 continue;
             };
             if existing_format != format {
                 continue;
             }
-            let result = schema::check_compatibility(format, &body.schema, &existing.schema, direction)?;
+            let result =
+                schema::check_compatibility(format, &body.schema, &existing.schema, direction)?;
             if !result.is_compatible {
                 return Err(KoraError::IncompatibleSchema);
             }
@@ -267,18 +272,28 @@ pub async fn check_schema(
     let parsed = schema::parse(format, &body.schema)?;
 
     // Resolve effective normalize: explicit param OR subject/global config.
-    let normalize = params.normalize
-        || compatibility::get_effective_normalize(&pool, &subject).await?;
+    let normalize =
+        params.normalize || compatibility::get_effective_normalize(&pool, &subject).await?;
 
-    let fp = if normalize { &parsed.fingerprint } else { &parsed.raw_fingerprint };
+    let fp = if normalize {
+        &parsed.fingerprint
+    } else {
+        &parsed.raw_fingerprint
+    };
 
     let subject_id = subjects::find_subject_id_by_name(&pool, &subject, params.deleted)
         .await?
         .ok_or(KoraError::SubjectNotFound)?;
 
-    let sv = schemas::find_schema_by_subject_id_and_fingerprint(&pool, subject_id, fp, normalize, params.deleted)
-        .await?
-        .ok_or(KoraError::SchemaNotFound)?;
+    let sv = schemas::find_schema_by_subject_id_and_fingerprint(
+        &pool,
+        subject_id,
+        fp,
+        normalize,
+        params.deleted,
+    )
+    .await?
+    .ok_or(KoraError::SchemaNotFound)?;
 
     Ok(Json(load_references(&pool, sv).await?))
 }
@@ -405,9 +420,7 @@ pub async fn delete_subject(
             schemas::list_schema_versions(&pool, &subject, true, false, false, 0, -1).await?;
         for v in &versions_to_delete {
             if references::is_version_referenced(&pool, &subject, *v).await? {
-                return Err(KoraError::ReferenceExists(format!(
-                    "{subject} version {v}"
-                )));
+                return Err(KoraError::ReferenceExists(format!("{subject} version {v}")));
             }
         }
         let versions = subjects::hard_delete_subject(&pool, &subject).await?;
@@ -451,9 +464,7 @@ pub async fn delete_version(
             return Err(KoraError::SchemaVersionNotSoftDeleted(subject, v));
         }
         if references::is_version_referenced(&pool, &subject, v).await? {
-            return Err(KoraError::ReferenceExists(format!(
-                "{subject} version {v}"
-            )));
+            return Err(KoraError::ReferenceExists(format!("{subject} version {v}")));
         }
         schemas::hard_delete_schema_version(&pool, &subject, v).await?
     } else {
@@ -544,7 +555,10 @@ pub async fn get_referencing_ids_by_version(
         if !subjects::subject_exists(&pool, &subject, false).await? {
             return Err(KoraError::SubjectNotFound);
         }
-        if schemas::find_schema_by_subject_version(&pool, &subject, v, false).await?.is_none() {
+        if schemas::find_schema_by_subject_version(&pool, &subject, v, false)
+            .await?
+            .is_none()
+        {
             return Err(KoraError::VersionNotFound);
         }
     }
@@ -565,7 +579,10 @@ async fn load_references(
 
 /// Return `SubjectNotFound` or `SubjectSoftDeleted` based on subject state.
 async fn subject_not_found_or_soft_deleted(pool: &PgPool, subject: &str) -> KoraError {
-    if subjects::subject_is_soft_deleted(pool, subject).await.unwrap_or(false) {
+    if subjects::subject_is_soft_deleted(pool, subject)
+        .await
+        .unwrap_or(false)
+    {
         KoraError::SubjectSoftDeleted(subject.to_string())
     } else {
         KoraError::SubjectNotFound

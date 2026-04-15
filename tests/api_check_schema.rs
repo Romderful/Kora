@@ -47,7 +47,8 @@ async fn check_schema_with_normalize_finds_match() {
     let client = reqwest::Client::new();
     let subject = format!("norm-check-{}", uuid::Uuid::new_v4());
 
-    let schema_compact = r#"{"type":"record","name":"NormCheck","fields":[{"name":"id","type":"int"}]}"#;
+    let schema_compact =
+        r#"{"type":"record","name":"NormCheck","fields":[{"name":"id","type":"int"}]}"#;
     let schema_spaced = r#"{  "type" : "record", "name" : "NormCheck",  "fields" : [ { "name" : "id", "type" : "int" } ] }"#;
 
     common::api::register_schema(&client, &base, &subject, schema_compact).await;
@@ -58,7 +59,11 @@ async fn check_schema_with_normalize_finds_match() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK, "normalize=true should find the match");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "normalize=true should find the match"
+    );
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["subject"], subject);
     assert_eq!(body["version"], 1);
@@ -70,7 +75,8 @@ async fn check_schema_without_normalize_misses_whitespace_variant() {
     let client = reqwest::Client::new();
     let subject = format!("norm-miss-{}", uuid::Uuid::new_v4());
 
-    let schema_compact = r#"{"type":"record","name":"NormMiss","fields":[{"name":"id","type":"int"}]}"#;
+    let schema_compact =
+        r#"{"type":"record","name":"NormMiss","fields":[{"name":"id","type":"int"}]}"#;
     let schema_spaced = r#"{  "type" : "record", "name" : "NormMiss",  "fields" : [ { "name" : "id", "type" : "int" } ] }"#;
 
     common::api::register_schema(&client, &base, &subject, schema_compact).await;
@@ -107,7 +113,11 @@ async fn check_schema_with_deleted_finds_soft_deleted() {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), StatusCode::OK, "deleted=true should find soft-deleted schema");
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "deleted=true should find soft-deleted schema"
+    );
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["subject"], subject);
     assert_eq!(body["id"], id);
@@ -119,7 +129,8 @@ async fn check_schema_nonexistent_subject_returns_40401() {
     let base = common::spawn_server().await;
     let client = reqwest::Client::new();
 
-    let resp = common::api::check_schema(&client, &base, "nonexistent", common::AVRO_SCHEMA_V1).await;
+    let resp =
+        common::api::check_schema(&client, &base, "nonexistent", common::AVRO_SCHEMA_V1).await;
 
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 

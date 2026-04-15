@@ -4,8 +4,8 @@ mod diff;
 
 use sha2::{Digest, Sha256};
 
-use crate::error::KoraError;
 use super::{CompatDirection, CompatibilityResult};
+use crate::error::KoraError;
 
 // -- Parsing --
 

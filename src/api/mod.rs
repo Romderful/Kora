@@ -3,8 +3,8 @@
 pub mod compatibility;
 pub mod health;
 pub mod metrics;
-pub mod mode;
 mod middleware;
+pub mod mode;
 pub mod schemas;
 pub mod subjects;
 
@@ -38,7 +38,10 @@ async fn root() -> impl IntoResponse {
 
 /// Build the application router with all routes.
 pub fn router(pool: PgPool, metrics_handle: PrometheusHandle, max_body_size: usize) -> Router {
-    let state = AppState { pool, metrics_handle };
+    let state = AppState {
+        pool,
+        metrics_handle,
+    };
 
     // API routes get the Confluent content-type header.
     let api = Router::new()
@@ -46,12 +49,24 @@ pub fn router(pool: PgPool, metrics_handle: PrometheusHandle, max_body_size: usi
         .route("/health", get(health::check_health))
         .route("/schemas", get(schemas::list_schemas))
         .route("/schemas/ids/{id}", get(schemas::get_schema_by_id))
-        .route("/schemas/ids/{id}/schema", get(schemas::get_schema_text_by_id))
-        .route("/schemas/ids/{id}/subjects", get(schemas::get_subjects_by_schema_id))
-        .route("/schemas/ids/{id}/versions", get(schemas::get_versions_by_schema_id))
+        .route(
+            "/schemas/ids/{id}/schema",
+            get(schemas::get_schema_text_by_id),
+        )
+        .route(
+            "/schemas/ids/{id}/subjects",
+            get(schemas::get_subjects_by_schema_id),
+        )
+        .route(
+            "/schemas/ids/{id}/versions",
+            get(schemas::get_versions_by_schema_id),
+        )
         .route("/schemas/types", get(schemas::list_schema_types))
         .route("/subjects", get(subjects::list_subjects))
-        .route("/subjects/{subject}", post(subjects::check_schema).delete(subjects::delete_subject))
+        .route(
+            "/subjects/{subject}",
+            post(subjects::check_schema).delete(subjects::delete_subject),
+        )
         .route(
             "/subjects/{subject}/versions",
             get(subjects::list_versions).post(subjects::register_schema),
@@ -103,8 +118,7 @@ pub fn router(pool: PgPool, metrics_handle: PrometheusHandle, max_body_size: usi
         .layer(middleware::content_type_layer());
 
     // Operational routes — no Confluent content-type header.
-    let ops = Router::new()
-        .route("/metrics", get(metrics::get_metrics));
+    let ops = Router::new().route("/metrics", get(metrics::get_metrics));
 
     api.merge(ops)
         .layer(axum::middleware::from_fn(middleware::track_metrics))
