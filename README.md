@@ -84,6 +84,7 @@ All configuration is done via environment variables:
 | `HOST` | `0.0.0.0` | Server bind address |
 | `PORT` | `8080` | Server listen port |
 | `MAX_BODY_SIZE` | `16777216` | Maximum request body size (bytes, default 16 MB) |
+| `DB_POOL_MAX` | `20` | Maximum database connections in the pool |
 
 The embedded image auto-generates `DATABASE_URL` when none is provided. If `DATABASE_URL` is set, embedded PostgreSQL is skipped entirely — even on the embedded image.
 
@@ -292,10 +293,11 @@ Override the registry: `KORA_IMAGE=my-registry.io/kora just release`
 ### All recipes
 
 ```
-[build]   build, build-embedded, release    Build + push to ghcr.io (amd64 + arm64)
-[dev]     dev, test                         Local development
-[docker]  run, run-embedded, stop, clean    Run images locally
-[quality] fmt, lint, fix, ci                Code quality + CI entrypoint
+[build]    build, build-embedded, release          Build + push to ghcr.io (amd64 + arm64)
+[dev]      dev, test                               Local development
+[docker]   run, run-embedded, stop, clean          Run images locally
+[loadtest] smoke, load, stress, soak, contention   k6 load tests (requires k6)
+[quality]  fmt, lint, fix, ci                      Code quality + CI entrypoint
 ```
 
 ---

@@ -37,7 +37,7 @@ async fn main() {
         "Idle database connections in the pool"
     );
 
-    let pool = storage::create_pool(&cfg.database_url)
+    let pool = storage::create_pool(&cfg.database_url, cfg.db_pool_max)
         .await
         .expect("failed to connect to database");
 

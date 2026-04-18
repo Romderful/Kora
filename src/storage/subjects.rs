@@ -30,78 +30,63 @@ pub async fn list_subjects(
         format!("{escaped}%")
     });
 
-    if deleted_only {
-        match (&like_pattern, limit >= 0) {
-            (Some(pat), true) => sqlx::query_scalar(
-                "SELECT name FROM subjects WHERE deleted = true AND name LIKE $1 ESCAPE '\\' ORDER BY name OFFSET $2 LIMIT $3",
-            )
-            .bind(pat)
-            .bind(offset)
-            .bind(limit)
-            .fetch_all(pool)
-            .await,
-
-            (Some(pat), false) => sqlx::query_scalar(
-                "SELECT name FROM subjects WHERE deleted = true AND name LIKE $1 ESCAPE '\\' ORDER BY name OFFSET $2",
-            )
-            .bind(pat)
-            .bind(offset)
-            .fetch_all(pool)
-            .await,
-
-            (None, true) => sqlx::query_scalar(
-                "SELECT name FROM subjects WHERE deleted = true ORDER BY name OFFSET $1 LIMIT $2",
-            )
-            .bind(offset)
-            .bind(limit)
-            .fetch_all(pool)
-            .await,
-
-            (None, false) => sqlx::query_scalar(
-                "SELECT name FROM subjects WHERE deleted = true ORDER BY name OFFSET $1",
-            )
-            .bind(offset)
-            .fetch_all(pool)
-            .await,
-        }
+    // Build query with literal WHERE clause so PG can use partial indexes.
+    // Using bind parameters for the deleted filter prevents index usage.
+    let filter = if deleted_only {
+        "deleted = true"
+    } else if include_deleted {
+        "true"
     } else {
-        match (&like_pattern, limit >= 0) {
-            (Some(pat), true) => sqlx::query_scalar(
-                "SELECT name FROM subjects WHERE (deleted = false OR $1) AND name LIKE $2 ESCAPE '\\' ORDER BY name OFFSET $3 LIMIT $4",
-            )
-            .bind(include_deleted)
-            .bind(pat)
-            .bind(offset)
-            .bind(limit)
-            .fetch_all(pool)
-            .await,
+        "deleted = false"
+    };
 
-            (Some(pat), false) => sqlx::query_scalar(
-                "SELECT name FROM subjects WHERE (deleted = false OR $1) AND name LIKE $2 ESCAPE '\\' ORDER BY name OFFSET $3",
-            )
-            .bind(include_deleted)
-            .bind(pat)
-            .bind(offset)
-            .fetch_all(pool)
-            .await,
+    let (sql, has_like) = match (&like_pattern, limit >= 0) {
+        (Some(_), true) => (
+            format!(
+                "SELECT name FROM subjects WHERE {filter} AND name LIKE $1 ESCAPE '\\' ORDER BY name OFFSET $2 LIMIT $3"
+            ),
+            true,
+        ),
+        (Some(_), false) => (
+            format!(
+                "SELECT name FROM subjects WHERE {filter} AND name LIKE $1 ESCAPE '\\' ORDER BY name OFFSET $2"
+            ),
+            true,
+        ),
+        (None, true) => (
+            format!("SELECT name FROM subjects WHERE {filter} ORDER BY name OFFSET $1 LIMIT $2"),
+            false,
+        ),
+        (None, false) => (
+            format!("SELECT name FROM subjects WHERE {filter} ORDER BY name OFFSET $1"),
+            false,
+        ),
+    };
 
-            (None, true) => sqlx::query_scalar(
-                "SELECT name FROM subjects WHERE deleted = false OR $1 ORDER BY name OFFSET $2 LIMIT $3",
-            )
-            .bind(include_deleted)
-            .bind(offset)
-            .bind(limit)
-            .fetch_all(pool)
-            .await,
-
-            (None, false) => sqlx::query_scalar(
-                "SELECT name FROM subjects WHERE deleted = false OR $1 ORDER BY name OFFSET $2",
-            )
-            .bind(include_deleted)
-            .bind(offset)
-            .fetch_all(pool)
-            .await,
+    if has_like {
+        let pat = like_pattern.as_deref().unwrap_or("%");
+        if limit >= 0 {
+            sqlx::query_scalar(&sql)
+                .bind(pat)
+                .bind(offset)
+                .bind(limit)
+                .fetch_all(pool)
+                .await
+        } else {
+            sqlx::query_scalar(&sql)
+                .bind(pat)
+                .bind(offset)
+                .fetch_all(pool)
+                .await
         }
+    } else if limit >= 0 {
+        sqlx::query_scalar(&sql)
+            .bind(offset)
+            .bind(limit)
+            .fetch_all(pool)
+            .await
+    } else {
+        sqlx::query_scalar(&sql).bind(offset).fetch_all(pool).await
     }
 }
 
@@ -134,37 +119,104 @@ pub async fn soft_delete_subject(pool: &PgPool, name: &str) -> Result<Vec<i32>, 
     Ok(versions)
 }
 
-/// Hard-delete a soft-deleted subject and all its schemas. Returns the deleted
-/// version numbers sorted ascending. Runs in a transaction.
+/// Hard-delete result with enough context for the handler to return the right error.
+pub enum HardDeleteResult {
+    /// Subject deleted, returns sorted version numbers.
+    Deleted(Vec<i32>),
+    /// Subject exists but is NOT soft-deleted (active).
+    NotSoftDeleted,
+    /// Subject does not exist.
+    NotFound,
+    /// A referenced version blocks deletion.
+    ReferenceExists(String),
+}
+
+/// Hard-delete a subject atomically: lock the row, verify preconditions
+/// (must be soft-deleted, no referenced versions), then delete.
 ///
-/// Only operates on rows where `deleted = true` (must be soft-deleted first).
+/// All checks run inside the transaction to eliminate TOCTOU races
+/// with concurrent writers that could re-activate the subject.
 ///
 /// # Errors
 ///
 /// Returns a database error on connection or transaction failure.
-pub async fn hard_delete_subject(pool: &PgPool, name: &str) -> Result<Vec<i32>, sqlx::Error> {
+pub async fn hard_delete_subject(
+    pool: &PgPool,
+    name: &str,
+) -> Result<HardDeleteResult, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
-    // No need to clean up schema_references — they belong to schema_contents
-    // which is never deleted (global IDs are permanent).
-    let mut versions = sqlx::query_scalar::<_, i32>(
-        r"DELETE FROM schema_versions
-           WHERE subject_id = (SELECT id FROM subjects WHERE name = $1) AND deleted = true
-           RETURNING version",
+    // Lock the subject row to prevent concurrent modifications.
+    let Some((subject_id, deleted)) = sqlx::query_as::<_, (i64, bool)>(
+        "SELECT id, deleted FROM subjects WHERE name = $1 FOR UPDATE",
     )
     .bind(name)
+    .fetch_optional(&mut *tx)
+    .await?
+    else {
+        return Ok(HardDeleteResult::NotFound);
+    };
+
+    if !deleted {
+        return Ok(HardDeleteResult::NotSoftDeleted);
+    }
+
+    // Check references inside the transaction (no TOCTOU).
+    let versions: Vec<i32> = sqlx::query_scalar(
+        "SELECT version FROM schema_versions WHERE subject_id = $1 AND deleted = true",
+    )
+    .bind(subject_id)
     .fetch_all(&mut *tx)
     .await?;
 
-    sqlx::query("DELETE FROM subjects WHERE name = $1 AND deleted = true")
+    for v in &versions {
+        let is_referenced: bool = sqlx::query_scalar(
+            r"SELECT EXISTS(
+                SELECT 1 FROM schema_references sr
+                JOIN schema_versions sv ON sr.content_id = sv.content_id
+                WHERE sr.subject = $1 AND sr.version = $2 AND sv.deleted = false
+            )",
+        )
         .bind(name)
+        .bind(v)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        if is_referenced {
+            return Ok(HardDeleteResult::ReferenceExists(format!(
+                "{name} version {v}"
+            )));
+        }
+    }
+
+    // Delete soft-deleted versions.
+    sqlx::query("DELETE FROM schema_versions WHERE subject_id = $1 AND deleted = true")
+        .bind(subject_id)
         .execute(&mut *tx)
         .await?;
 
+    // Only delete the subject if no active versions remain (a concurrent writer
+    // may have inserted a new version between our lock and this point via the
+    // UPSERT which re-activates the subject).
+    let has_active: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM schema_versions WHERE subject_id = $1 AND deleted = false)",
+    )
+    .bind(subject_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if !has_active {
+        sqlx::query("DELETE FROM subjects WHERE id = $1")
+            .bind(subject_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
     tx.commit().await?;
 
-    versions.sort_unstable();
-    Ok(versions)
+    let mut sorted = versions;
+    sorted.sort_unstable();
+    Ok(HardDeleteResult::Deleted(sorted))
 }
 
 /// Find a subject's ID by name, optionally including soft-deleted subjects.

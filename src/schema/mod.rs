@@ -162,6 +162,26 @@ pub fn check_compatibility(
     }
 }
 
+/// Async wrapper around [`check_compatibility`] that offloads CPU-bound diff
+/// work to a blocking thread, preventing Tokio worker starvation under load.
+///
+/// # Errors
+///
+/// Returns `KoraError::InvalidSchema` if either schema is malformed, or
+/// `KoraError::BackendDataStore` if the blocking task panics.
+pub async fn check_compatibility_async(
+    format: SchemaFormat,
+    new_schema: String,
+    existing_schema: String,
+    direction: CompatDirection,
+) -> Result<CompatibilityResult, KoraError> {
+    tokio::task::spawn_blocking(move || {
+        check_compatibility(format, &new_schema, &existing_schema, direction)
+    })
+    .await
+    .map_err(|e| KoraError::BackendDataStore(e.to_string()))?
+}
+
 /// Run a directional compatibility check using a format-specific diff function.
 ///
 /// The `diff_fn` compares two schemas (old, new) and returns `(is_compatible, messages)`.

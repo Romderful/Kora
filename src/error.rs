@@ -149,10 +149,16 @@ impl KoraError {
 
 impl IntoResponse for KoraError {
     fn into_response(self) -> Response {
+        let status = self.status_code();
         let body = ErrorBody {
             error_code: self.error_code(),
             message: self.to_string(),
         };
-        (self.status_code(), Json(body)).into_response()
+
+        if status == StatusCode::INTERNAL_SERVER_ERROR {
+            tracing::error!(error_code = body.error_code, error = %self, "internal server error");
+        }
+
+        (status, Json(body)).into_response()
     }
 }

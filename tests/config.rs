@@ -12,6 +12,7 @@ fn config_defaults_applied() {
     assert_eq!(cfg.host, "0.0.0.0");
     assert_eq!(cfg.port, 8080);
     assert!(cfg.database_url.is_empty());
+    assert_eq!(cfg.db_pool_max, 20);
 }
 
 #[test]

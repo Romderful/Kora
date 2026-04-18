@@ -51,28 +51,54 @@ pub struct SchemaVersion {
 
 // -- Registration --
 
+/// A compatibility check to run inside the registration transaction.
+///
+/// Populated by the handler with the schemas to check against.
+/// Running inside the transaction (after locking the subject row)
+/// guarantees no other registration can slip between the check and the insert.
+pub struct CompatCheck {
+    /// Schemas to check compatibility against (fetched before the transaction
+    /// for the non-transitive case, or inside for transitive).
+    pub versions: Vec<SchemaVersion>,
+    /// The new schema text to check.
+    pub new_schema: String,
+    /// The format of the new schema.
+    pub format: crate::schema::SchemaFormat,
+    /// The compatibility direction resolved from the configured level.
+    pub direction: crate::schema::CompatDirection,
+}
+
 /// Register a schema atomically: upsert subject, deduplicate content globally,
 /// create version, and store references — all in a single transaction.
 ///
+/// The compatibility check runs **inside** the transaction, after acquiring the
+/// subject row lock. This eliminates the TOCTOU race where two concurrent
+/// registrations could both pass the check against stale data.
+///
 /// Content dedup is global: identical schema text shares one `schema_contents` row
-/// and one global ID across all subjects (Confluent behavior).
+/// and one global ID across all subjects (Confluent behavior). The UNIQUE constraint
+/// on `raw_fingerprint` prevents duplicate rows under concurrent inserts.
 ///
 /// Returns `(content_id, version, is_new)` — if `is_new` is false, the schema was
 /// already registered under this subject (idempotent).
 ///
 /// # Errors
 ///
-/// Returns a database error on connection or constraint failure.
+/// Returns a database error on connection or constraint failure, or
+/// `KoraError::IncompatibleSchema` if the compatibility check fails.
 pub async fn register_schema_atomically(
     pool: &PgPool,
     subject_name: &str,
     schema: &NewSchema<'_>,
     refs: &[crate::types::SchemaReference],
     normalize: bool,
-) -> Result<(i64, i32, bool), sqlx::Error> {
+    compat: Option<CompatCheck>,
+) -> Result<(i64, i32, bool), crate::error::KoraError> {
     let mut tx = pool.begin().await?;
 
     // Upsert subject and lock the row — re-activates soft-deleted subjects.
+    // ON CONFLICT DO UPDATE implicitly acquires a row-level lock on the
+    // conflicting row, so a separate SELECT ... FOR UPDATE is unnecessary.
     let subject_id = sqlx::query_scalar::<_, i64>(
         r"INSERT INTO subjects (name) VALUES ($1)
           ON CONFLICT (name) DO UPDATE SET deleted = false, updated_at = now()
@@ -81,11 +107,6 @@ pub async fn register_schema_atomically(
     .bind(subject_name)
     .fetch_one(&mut *tx)
     .await?;
-
-    sqlx::query("SELECT 1 FROM subjects WHERE id = $1 FOR UPDATE")
-        .bind(subject_id)
-        .fetch_one(&mut *tx)
-        .await?;
 
     // Per-subject idempotency: does this subject already have an active version
     // pointing to content with this fingerprint?
@@ -107,31 +128,27 @@ pub async fn register_schema_atomically(
         return Ok((content_id, version_num, false));
     }
 
-    // Global content dedup: does this content already exist anywhere?
-    let existing_content = sqlx::query_scalar::<_, i64>(&format!(
-        "SELECT id FROM schema_contents WHERE {fp_col} = $1"
-    ))
-    .bind(fp)
-    .fetch_optional(&mut *tx)
-    .await?;
+    // Run compatibility check inside the transaction, after locking the subject.
+    // This guarantees no other registration can insert between check and insert.
+    if let Some(compat) = compat {
+        run_compat_check(&mut tx, subject_id, compat).await?;
+    }
 
-    let (content_id, content_is_new) = if let Some(id) = existing_content {
-        (id, false)
-    } else {
-        let id = sqlx::query_scalar::<_, i64>(
-            r"INSERT INTO schema_contents (schema_type, schema_text, canonical_form, fingerprint, raw_fingerprint)
-              VALUES ($1, $2, $3, $4, $5)
-              RETURNING id",
-        )
-        .bind(schema.schema_type)
-        .bind(schema.schema_text)
-        .bind(schema.canonical_form)
-        .bind(schema.fingerprint)
-        .bind(schema.raw_fingerprint)
-        .fetch_one(&mut *tx)
-        .await?;
-        (id, true)
-    };
+    // Global content dedup: INSERT with ON CONFLICT on the UNIQUE raw_fingerprint.
+    // This safely handles concurrent inserts of identical content from different subjects.
+    let content_id = sqlx::query_scalar::<_, i64>(
+        r"INSERT INTO schema_contents (schema_type, schema_text, canonical_form, fingerprint, raw_fingerprint)
+          VALUES ($1, $2, $3, $4, $5)
+          ON CONFLICT (raw_fingerprint) DO UPDATE SET schema_type = EXCLUDED.schema_type
+          RETURNING id",
+    )
+    .bind(schema.schema_type)
+    .bind(schema.schema_text)
+    .bind(schema.canonical_form)
+    .bind(schema.fingerprint)
+    .bind(schema.raw_fingerprint)
+    .fetch_one(&mut *tx)
+    .await?;
 
     // Create new version pointing to content.
     let version_num: i32 = sqlx::query_scalar(
@@ -144,23 +161,80 @@ pub async fn register_schema_atomically(
     .fetch_one(&mut *tx)
     .await?;
 
-    // Store references only for new content.
-    if content_is_new {
-        for r in refs {
-            sqlx::query(
-                "INSERT INTO schema_references (content_id, name, subject, version) VALUES ($1, $2, $3, $4)",
-            )
-            .bind(content_id)
-            .bind(&r.name)
-            .bind(&r.subject)
-            .bind(r.version)
-            .execute(&mut *tx)
-            .await?;
+    // Store references only when provided and content has none yet.
+    if !refs.is_empty() {
+        let has_refs: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM schema_references WHERE content_id = $1)",
+        )
+        .bind(content_id)
+        .fetch_one(&mut *tx)
+        .await?;
+
+        if !has_refs {
+            for r in refs {
+                sqlx::query(
+                    "INSERT INTO schema_references (content_id, name, subject, version) VALUES ($1, $2, $3, $4)",
+                )
+                .bind(content_id)
+                .bind(&r.name)
+                .bind(&r.subject)
+                .bind(r.version)
+                .execute(&mut *tx)
+                .await?;
+            }
         }
     }
 
     tx.commit().await?;
     Ok((content_id, version_num, true))
+}
+
+/// Run compatibility check inside a transaction.
+///
+/// For transitive mode (empty `versions`), re-fetches all versions inside the
+/// transaction for consistency. For non-transitive, uses the pre-fetched versions.
+async fn run_compat_check(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    subject_id: i64,
+    compat: CompatCheck,
+) -> Result<(), crate::error::KoraError> {
+    let versions = if compat.versions.is_empty() {
+        let rows = sqlx::query(
+            r"SELECT sc.id, sub.name as subject, sv.version, sc.schema_type, sc.schema_text
+               FROM schema_versions sv
+               JOIN subjects sub ON sv.subject_id = sub.id
+               JOIN schema_contents sc ON sv.content_id = sc.id
+               WHERE sv.subject_id = $1 AND sv.deleted = false
+               ORDER BY sv.version",
+        )
+        .bind(subject_id)
+        .fetch_all(&mut **tx)
+        .await?;
+        rows.iter().map(row_to_schema_version).collect::<Vec<_>>()
+    } else {
+        compat.versions
+    };
+
+    for existing in &versions {
+        let Ok(existing_format) =
+            crate::schema::SchemaFormat::from_optional(Some(&existing.schema_type))
+        else {
+            continue;
+        };
+        if existing_format != compat.format {
+            continue;
+        }
+        let result = crate::schema::check_compatibility(
+            compat.format,
+            &compat.new_schema,
+            &existing.schema,
+            compat.direction,
+        )?;
+        if !result.is_compatible {
+            return Err(crate::error::KoraError::IncompatibleSchema);
+        }
+    }
+    Ok(())
 }
 
 /// Check if a subject already has an active version with a given fingerprint.
@@ -185,6 +259,32 @@ async fn find_existing_version(
 }
 
 // -- Lookups --
+
+/// Fetch all active versions for a subject in a single query.
+///
+/// Replaces the N+1 pattern of listing version numbers then fetching each one
+/// individually. Used by compatibility checks (transitive mode).
+///
+/// # Errors
+///
+/// Returns a database error on connection failure.
+pub async fn find_all_active_versions(
+    pool: &PgPool,
+    subject: &str,
+) -> Result<Vec<SchemaVersion>, sqlx::Error> {
+    let rows = sqlx::query(
+        r"SELECT sc.id, sub.name as subject, sv.version, sc.schema_type, sc.schema_text
+           FROM schema_versions sv
+           JOIN subjects sub ON sv.subject_id = sub.id
+           JOIN schema_contents sc ON sv.content_id = sc.id
+           WHERE sub.name = $1 AND sv.deleted = false
+           ORDER BY sv.version",
+    )
+    .bind(subject)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.iter().map(row_to_schema_version).collect())
+}
 
 /// Find a schema by subject name and version number.
 ///

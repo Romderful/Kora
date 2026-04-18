@@ -172,48 +172,30 @@ pub async fn register_schema(
     let normalize =
         params.normalize || compatibility::get_effective_normalize(&pool, &subject).await?;
 
-    // Enforce compatibility mode before registration.
+    // Build compatibility check to run inside the transaction (eliminates TOCTOU).
     let level = compatibility::get_effective_compatibility(&pool, &subject).await?;
     let direction = schema::CompatDirection::from_level(&level);
-    if direction != schema::CompatDirection::None {
+    let compat = if direction == schema::CompatDirection::None {
+        None
+    } else {
         let is_transitive = level.contains("TRANSITIVE");
-        let versions_to_check: Vec<schemas::SchemaVersion> = if is_transitive {
-            // Transitive: check against ALL active versions.
-            let nums =
-                schemas::list_schema_versions(&pool, &subject, false, false, false, 0, -1).await?;
-            let mut versions = Vec::with_capacity(nums.len());
-            for v in nums {
-                if let Some(sv) =
-                    schemas::find_schema_by_subject_version(&pool, &subject, v, false).await?
-                {
-                    versions.push(sv);
-                }
-            }
-            versions
+        let versions = if is_transitive {
+            // Transitive: pass empty vec — transaction will re-fetch for consistency.
+            Vec::new()
         } else {
-            // Non-transitive: check against latest version only.
+            // Non-transitive: pre-fetch latest (will be re-validated inside tx lock).
             schemas::find_latest_schema_by_subject(&pool, &subject, false)
                 .await?
                 .into_iter()
                 .collect()
         };
-
-        for existing in &versions_to_check {
-            // Skip type-mismatched versions (subject may have mixed types under NONE then switched).
-            let Ok(existing_format) = SchemaFormat::from_optional(Some(&existing.schema_type))
-            else {
-                continue;
-            };
-            if existing_format != format {
-                continue;
-            }
-            let result =
-                schema::check_compatibility(format, &body.schema, &existing.schema, direction)?;
-            if !result.is_compatible {
-                return Err(KoraError::IncompatibleSchema);
-            }
-        }
-    }
+        Some(schemas::CompatCheck {
+            versions,
+            new_schema: body.schema.clone(),
+            format,
+            direction,
+        })
+    };
 
     // Validate references before any writes.
     let refs = body.references.as_deref().unwrap_or_default();
@@ -233,6 +215,7 @@ pub async fn register_schema(
         },
         refs,
         normalize,
+        compat,
     )
     .await?;
 
@@ -409,25 +392,18 @@ pub async fn delete_subject(
     enforce_writable(&pool, &subject).await?;
 
     if params.permanent {
-        // Confluent requires subject to be soft-deleted first (40405).
-        // subject_exists returns false for both nonexistent AND soft-deleted subjects,
-        // so we must distinguish: if active → 40405, if nonexistent → let hard_delete handle 40401.
-        if subjects::subject_exists(&pool, &subject, false).await? {
-            return Err(KoraError::SubjectNotSoftDeleted(subject));
-        }
-        // Check if any version of this subject is referenced by other schemas.
-        let versions_to_delete =
-            schemas::list_schema_versions(&pool, &subject, true, false, false, 0, -1).await?;
-        for v in &versions_to_delete {
-            if references::is_version_referenced(&pool, &subject, *v).await? {
-                return Err(KoraError::ReferenceExists(format!("{subject} version {v}")));
+        // All checks (soft-deleted?, references?) run inside the transaction
+        // to eliminate TOCTOU races with concurrent writers.
+        match subjects::hard_delete_subject(&pool, &subject).await? {
+            subjects::HardDeleteResult::Deleted(versions) => Ok(Json(versions)),
+            subjects::HardDeleteResult::NotSoftDeleted => {
+                Err(KoraError::SubjectNotSoftDeleted(subject))
+            }
+            subjects::HardDeleteResult::NotFound => Err(KoraError::SubjectNotFound),
+            subjects::HardDeleteResult::ReferenceExists(msg) => {
+                Err(KoraError::ReferenceExists(msg))
             }
         }
-        let versions = subjects::hard_delete_subject(&pool, &subject).await?;
-        if versions.is_empty() {
-            return Err(KoraError::SubjectNotFound);
-        }
-        Ok(Json(versions))
     } else {
         if !subjects::subject_exists(&pool, &subject, false).await? {
             return Err(subject_not_found_or_soft_deleted(&pool, &subject).await);

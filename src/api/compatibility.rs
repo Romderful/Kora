@@ -228,7 +228,13 @@ pub async fn test_compatibility_by_version(
 
     let level = compatibility::get_effective_compatibility(&pool, &subject).await?;
     let direction = schema::CompatDirection::from_level(&level);
-    let result = schema::check_compatibility(format, &body.schema, &existing.schema, direction)?;
+    let result = schema::check_compatibility_async(
+        format,
+        body.schema.clone(),
+        existing.schema.clone(),
+        direction,
+    )
+    .await?;
 
     Ok(Json(compat_response(
         result.is_compatible,
@@ -253,9 +259,8 @@ pub async fn test_compatibility_against_all_versions(
     let (format, body) = parse_compat_request(body)?;
 
     // Confluent: nonexistent subject → is_compatible: true (no versions to check).
-    let version_nums =
-        schemas::list_schema_versions(&pool, &subject, false, false, false, 0, -1).await?;
-    if version_nums.is_empty() {
+    let all_versions = schemas::find_all_active_versions(&pool, &subject).await?;
+    if all_versions.is_empty() {
         return Ok(Json(compat_response(true, &[], params.verbose)));
     }
 
@@ -264,11 +269,7 @@ pub async fn test_compatibility_against_all_versions(
     let mut all_messages = Vec::new();
     let mut is_compatible = true;
 
-    for v in &version_nums {
-        let existing = schemas::find_schema_by_subject_version(&pool, &subject, *v, false)
-            .await?
-            .ok_or(KoraError::VersionNotFound)?;
-
+    for existing in &all_versions {
         // Skip type-mismatched versions (subject may have mixed types under NONE then switched).
         let Ok(existing_format) = SchemaFormat::from_optional(Some(&existing.schema_type)) else {
             continue;
@@ -277,8 +278,13 @@ pub async fn test_compatibility_against_all_versions(
             continue;
         }
 
-        let result =
-            schema::check_compatibility(format, &body.schema, &existing.schema, direction)?;
+        let result = schema::check_compatibility_async(
+            format,
+            body.schema.clone(),
+            existing.schema.clone(),
+            direction,
+        )
+        .await?;
         if !result.is_compatible {
             is_compatible = false;
         }

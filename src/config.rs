@@ -22,6 +22,9 @@ pub struct KoraConfig {
     /// Maximum request body size in bytes.
     #[serde(default = "default_max_body_size")]
     pub max_body_size: usize,
+    /// Maximum number of database connections in the pool.
+    #[serde(default = "default_db_pool_max")]
+    pub db_pool_max: u32,
 }
 
 // -- Impls --
@@ -33,6 +36,7 @@ impl Default for KoraConfig {
             host: default_host(),
             port: default_port(),
             max_body_size: default_max_body_size(),
+            db_pool_max: default_db_pool_max(),
         }
     }
 }
@@ -49,7 +53,13 @@ impl KoraConfig {
     /// Returns an error if required values are missing or cannot be parsed.
     pub fn load() -> Result<Self, Box<figment::Error>> {
         Figment::from(Serialized::defaults(Self::default()))
-            .merge(Env::raw().only(&["DATABASE_URL", "HOST", "PORT", "MAX_BODY_SIZE"]))
+            .merge(Env::raw().only(&[
+                "DATABASE_URL",
+                "HOST",
+                "PORT",
+                "MAX_BODY_SIZE",
+                "DB_POOL_MAX",
+            ]))
             .extract()
             .map_err(Box::new)
     }
@@ -67,4 +77,8 @@ fn default_port() -> u16 {
 
 fn default_max_body_size() -> usize {
     16 * 1_024 * 1_024
+}
+
+fn default_db_pool_max() -> u32 {
+    20
 }

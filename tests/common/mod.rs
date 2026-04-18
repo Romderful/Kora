@@ -88,7 +88,7 @@ pub fn database_url() -> String {
 
 /// Create a PG pool with migrations applied.
 pub async fn pool() -> sqlx::PgPool {
-    kora::storage::create_pool(&database_url())
+    kora::storage::create_pool(&database_url(), 10)
         .await
         .expect("database should be reachable")
 }

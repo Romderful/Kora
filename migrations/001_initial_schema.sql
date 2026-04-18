@@ -50,8 +50,9 @@ CREATE TABLE IF NOT EXISTS config (
 CREATE INDEX IF NOT EXISTS idx_schema_versions_subject_version ON schema_versions(subject_id, version);
 CREATE INDEX IF NOT EXISTS idx_schema_versions_content_id ON schema_versions(content_id);
 CREATE INDEX IF NOT EXISTS idx_schema_contents_fingerprint ON schema_contents(fingerprint);
-CREATE INDEX IF NOT EXISTS idx_schema_contents_raw_fingerprint ON schema_contents(raw_fingerprint);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_schema_contents_raw_fingerprint ON schema_contents(raw_fingerprint);
 CREATE INDEX IF NOT EXISTS idx_subjects_name ON subjects(name);
+CREATE INDEX IF NOT EXISTS idx_subjects_name_active ON subjects(name) WHERE deleted = false;
 CREATE INDEX IF NOT EXISTS idx_schema_references_content_id ON schema_references(content_id);
 
 -- Ensure at most one global config row (NULL subject).

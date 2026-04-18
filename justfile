@@ -77,6 +77,78 @@ release tag="latest":
     just build-embedded {{ tag }}-embedded
     just build {{ tag }}
 
+# ---------- Load testing ----------
+
+loadtest_db  := "postgres://kora:kora@localhost:5433/kora_loadtest"
+loadtest_pg  := "docker compose -f loadtest/docker-compose.loadtest.yml"
+loadtest_pg_ready := loadtest_pg + " exec -T postgres pg_isready -U kora > /dev/null 2>&1"
+
+[private]
+ensure-loadtest-pg:
+    @{{ loadtest_pg_ready }} || { {{ loadtest_pg }} up -d; \
+      echo "Waiting for load test PG..."; until {{ loadtest_pg_ready }}; do sleep 0.3; done; }
+    @{{ loadtest_pg }} exec -T postgres psql -U kora -d kora_loadtest -c "CREATE EXTENSION IF NOT EXISTS pg_stat_statements" > /dev/null 2>&1 || true
+
+# Run a k6 scenario: starts PG + Kora automatically, tears down after
+[private]
+loadtest-run scenario *k6args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    just ensure-loadtest-pg
+
+    # Build + start Kora in background
+    cargo build --quiet
+    DB_POOL_MAX=${DB_POOL_MAX:-20} DATABASE_URL={{ loadtest_db }} ./target/debug/kora &
+    KORA_PID=$!
+    trap 'kill $KORA_PID 2>/dev/null; wait $KORA_PID 2>/dev/null' EXIT
+
+    # Wait for Kora to be ready
+    echo "Waiting for Kora..."
+    until curl -sf http://localhost:8080/health > /dev/null 2>&1; do sleep 0.2; done
+    echo "Kora ready — running {{ scenario }}"
+
+    k6 run -e KORA_URL=http://localhost:8080 {{ k6args }} loadtest/scenarios/{{ scenario }}
+
+# Quick baseline — 1 VU, 30s
+[group('loadtest')]
+smoke:
+    just loadtest-run smoke.js
+
+# Nominal production load — named scenarios, 5min
+[group('loadtest')]
+load:
+    just loadtest-run load.js
+
+# Find the breaking point — ramp to 300 VUs
+[group('loadtest')]
+stress:
+    just loadtest-run stress.js
+
+# Long-running accumulation — 2h (override with K6_SOAK_DURATION)
+[group('loadtest')]
+soak:
+    just loadtest-run soak.js --out csv=loadtest/soak-results.csv
+
+# FOR UPDATE lock contention — single subject
+[group('loadtest')]
+contention:
+    just loadtest-run contention.js
+
+# Delete under concurrent writes
+[group('loadtest')]
+delete-load:
+    just loadtest-run delete-under-load.js
+
+# Run PG monitoring queries (in another terminal during a test)
+[group('loadtest')]
+pg-monitor:
+    {{ loadtest_pg }} exec -T postgres psql -U kora -d kora_loadtest -f /dev/stdin < loadtest/pg-monitor.sql
+
+# Stop load test infrastructure and wipe data
+[group('loadtest')]
+loadtest-stop:
+    {{ loadtest_pg }} down -v
+
 # ---------- Docker (local) ----------
 
 # Run slim image locally (needs DATABASE_URL)
