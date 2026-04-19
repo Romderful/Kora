@@ -2,7 +2,7 @@
 FROM --platform=$BUILDPLATFORM tonistiigi/xx AS xx
 
 # -- Builder: static musl binary via xx-cargo --
-FROM --platform=$BUILDPLATFORM rust:1.94-alpine AS builder
+FROM --platform=$BUILDPLATFORM rust:1.95-alpine AS builder
 COPY --from=xx / /
 RUN apk add clang cmake lld
 RUN rustup target add $(xx-cargo --print-target-triple)
@@ -21,7 +21,7 @@ RUN mkdir -p /image && \
     cp target/$(xx-cargo --print-target-triple)/release/kora /image/kora
 
 # -- Runtime: Alpine + tini (+ optional embedded PostgreSQL) --
-FROM alpine:3.21
+FROM alpine:3.23
 
 LABEL org.opencontainers.image.source="https://github.com/Romderful/Kora" \
       org.opencontainers.image.description="Kora — Confluent-compatible Schema Registry" \
