@@ -1,0 +1,54 @@
+version: 2
+
+updates:
+  # ── Rust deps (weekly Monday) ──
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 8
+    reviewers: [Romderful]
+    labels: [dependencies, deps:rust]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      rust-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # ── GitHub Actions (weekly Wednesday) ──
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: "08:00"
+      timezone: Europe/Paris
+    open-pull-requests-limit: 5
+    reviewers: [Romderful]
+    labels: [dependencies, deps:actions]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      actions-all:
+        patterns: ["*"]
+
+  # ── Docker (monthly) ──
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    reviewers: [Romderful]
+    labels: [dependencies, deps:docker]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      docker-all:
+        patterns: ["*"]
