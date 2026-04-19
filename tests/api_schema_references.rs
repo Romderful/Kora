@@ -503,3 +503,42 @@ async fn referencedby_invalid_version_returns_42202() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error_code"], 42202);
 }
+
+// -- Python-style booleans (case-insensitive query params) --
+
+#[tokio::test]
+async fn referencedby_accepts_python_style_deleted_true() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let ref_subject = format!("py-refby-{}", uuid::Uuid::new_v4());
+    let dep_subject = format!("py-refby-dep-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &ref_subject, &common::unique_avro_schema()).await;
+    let refs = serde_json::json!([{"name": "Base", "subject": ref_subject, "version": 1}]);
+    let resp = common::api::register_schema_with_refs(
+        &client,
+        &base,
+        &dep_subject,
+        &common::unique_avro_schema(),
+        &refs,
+    )
+    .await;
+    let dep_id = resp.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    common::api::delete_version(&client, &base, &dep_subject, "1").await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .get(format!(
+            "{base}/subjects/{ref_subject}/versions/1/referencedby?deleted=True"
+        ))
+        .send()
+        .await
+        .unwrap();
+    let ids: Vec<i64> = resp.json().await.unwrap();
+    assert!(
+        ids.contains(&dep_id),
+        "deleted=True should include soft-deleted referencing schema"
+    );
+}

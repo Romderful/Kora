@@ -233,3 +233,27 @@ async fn raw_schema_by_id_accepts_subject_param() {
 
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+// -- Python-style booleans (case-insensitive query params) --
+
+#[tokio::test]
+async fn get_schema_by_id_accepts_python_style_fetch_max_id() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("py-maxid-{}", uuid::Uuid::new_v4());
+
+    let id = common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .get(format!("{base}/schemas/ids/{id}?fetchMaxId=True"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert!(
+        body["maxId"].is_number(),
+        "fetchMaxId=True should include maxId"
+    );
+}

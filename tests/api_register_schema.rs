@@ -971,3 +971,62 @@ async fn register_level_change_forward_to_backward() {
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+// -- Python-style booleans (case-insensitive query params) --
+
+#[tokio::test]
+async fn register_with_python_style_normalize_true() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("py-norm-{}", uuid::Uuid::new_v4());
+
+    let schema_compact =
+        r#"{"type":"record","name":"PyNorm","fields":[{"name":"id","type":"int"}]}"#;
+    let schema_spaced = r#"{  "type" : "record",  "name" : "PyNorm",  "fields" : [ { "name" : "id", "type" : "int" } ] }"#;
+
+    // Python's str(True) → "True"
+    let resp1 = client
+        .post(format!("{base}/subjects/{subject}/versions?normalize=True"))
+        .json(&serde_json::json!({"schema": schema_compact}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp1.status(), StatusCode::OK);
+    let id1 = resp1.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_i64()
+        .unwrap();
+
+    let resp2 = client
+        .post(format!("{base}/subjects/{subject}/versions?normalize=True"))
+        .json(&serde_json::json!({"schema": schema_spaced}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp2.status(), StatusCode::OK);
+    let id2 = resp2.json::<serde_json::Value>().await.unwrap()["id"]
+        .as_i64()
+        .unwrap();
+
+    assert_eq!(
+        id1, id2,
+        "normalize=True (Python-style) should deduplicate like normalize=true"
+    );
+}
+
+#[tokio::test]
+async fn register_with_python_style_normalize_false() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("py-norm-false-{}", uuid::Uuid::new_v4());
+
+    // Python's str(False) → "False"
+    let resp = client
+        .post(format!(
+            "{base}/subjects/{subject}/versions?normalize=False"
+        ))
+        .json(&serde_json::json!({"schema": common::AVRO_SCHEMA_V1}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}

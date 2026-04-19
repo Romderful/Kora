@@ -350,3 +350,47 @@ async fn raw_schema_by_version_invalid_version_returns_42202() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error_code"], 42202);
 }
+
+// -- Python-style booleans (case-insensitive query params) --
+
+#[tokio::test]
+async fn get_schema_by_version_accepts_python_style_deleted_true() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("py-ver-del-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::delete_version(&client, &base, &subject, "1").await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .get(format!("{base}/subjects/{subject}/versions/1?deleted=True"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "deleted=True should return soft-deleted version"
+    );
+}
+
+#[tokio::test]
+async fn raw_schema_by_version_accepts_python_style_deleted_true() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("py-raw-del-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::delete_version(&client, &base, &subject, "1").await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .get(format!(
+            "{base}/subjects/{subject}/versions/1/schema?deleted=True"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}

@@ -336,3 +336,60 @@ async fn list_versions_soft_deleted_subject_with_deleted_returns_versions() {
     let versions: Vec<i32> = resp.json().await.unwrap();
     assert_eq!(versions, vec![1, 2]);
 }
+
+// -- Python-style booleans (case-insensitive query params) --
+
+#[tokio::test]
+async fn list_subjects_accepts_python_style_deleted_true() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("py-del-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::delete_subject(&client, &base, &subject).await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .get(format!("{base}/subjects?deleted=True"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let names: Vec<String> = resp.json().await.unwrap();
+    assert!(names.contains(&subject));
+}
+
+#[tokio::test]
+async fn list_subjects_accepts_uppercase_deleted_true() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+
+    let resp = client
+        .get(format!("{base}/subjects?deleted=TRUE"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn list_versions_accepts_python_style_booleans() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("py-ver-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V2).await;
+    common::api::delete_version(&client, &base, &subject, "1").await;
+
+    let resp = client
+        .get(format!(
+            "{base}/subjects/{subject}/versions?deleted=True&deletedAsNegative=True"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let versions: Vec<i32> = resp.json().await.unwrap();
+    assert_eq!(versions, vec![-1, 2]);
+}

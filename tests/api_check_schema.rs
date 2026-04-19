@@ -137,3 +137,54 @@ async fn check_schema_nonexistent_subject_returns_40401() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error_code"], 40401);
 }
+
+// -- Python-style booleans (case-insensitive query params) --
+
+#[tokio::test]
+async fn check_schema_with_python_style_normalize_true() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("py-norm-check-{}", uuid::Uuid::new_v4());
+
+    let schema_compact =
+        r#"{"type":"record","name":"PyCheck","fields":[{"name":"id","type":"int"}]}"#;
+    let schema_spaced = r#"{  "type" : "record", "name" : "PyCheck",  "fields" : [ { "name" : "id", "type" : "int" } ] }"#;
+
+    common::api::register_schema(&client, &base, &subject, schema_compact).await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .post(format!("{base}/subjects/{subject}?normalize=True"))
+        .json(&serde_json::json!({"schema": schema_spaced}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "normalize=True should find the match"
+    );
+}
+
+#[tokio::test]
+async fn check_schema_with_python_style_deleted_true() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("py-check-del-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::delete_subject(&client, &base, &subject).await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .post(format!("{base}/subjects/{subject}?deleted=True"))
+        .json(&serde_json::json!({"schema": common::AVRO_SCHEMA_V1}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        StatusCode::OK,
+        "deleted=True should find soft-deleted schema"
+    );
+}

@@ -381,6 +381,34 @@ async fn compat_invalid_schema_returns_42201() {
     assert_eq!(body["error_code"], 42201);
 }
 
+// -- Python-style booleans (case-insensitive query params) --
+
+#[tokio::test]
+async fn compat_verbose_accepts_python_style_true() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("py-verbose-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::COMPAT_AVRO_V1).await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .post(format!(
+            "{base}/compatibility/subjects/{subject}/versions/latest?verbose=True"
+        ))
+        .json(&serde_json::json!({"schema": common::COMPAT_AVRO_INCOMPAT}))
+        .send()
+        .await
+        .unwrap();
+
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["is_compatible"], false);
+    assert!(
+        body["messages"].is_array(),
+        "verbose=True should include messages array"
+    );
+}
+
 // JSON Schema and Protobuf diff engine coverage is in:
 // - tests/confluent_json_schema_compat.rs (251 Confluent test cases)
 // - tests/confluent_protobuf_compat.rs (43 Confluent test cases)

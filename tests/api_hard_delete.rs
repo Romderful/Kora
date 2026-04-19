@@ -114,3 +114,43 @@ async fn hard_delete_subject_twice_returns_40401() {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error_code"], 40401);
 }
+
+// -- Python-style booleans (case-insensitive query params) --
+
+#[tokio::test]
+async fn hard_delete_subject_accepts_python_style_permanent_true() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("py-hard-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::delete_subject(&client, &base, &subject).await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .delete(format!("{base}/subjects/{subject}?permanent=True"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn hard_delete_version_accepts_python_style_permanent_true() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("py-hard-ver-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+    common::api::delete_version(&client, &base, &subject, "1").await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .delete(format!(
+            "{base}/subjects/{subject}/versions/1?permanent=True"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}

@@ -4,12 +4,42 @@ use std::time::Instant;
 
 use axum::{
     extract::MatchedPath,
-    http::{Request, header},
+    http::{Request, Uri, header},
     middleware::Next,
     response::IntoResponse,
 };
 
 use crate::error::CONTENT_TYPE_SCHEMA_REGISTRY;
+
+/// Middleware that normalizes case-insensitive boolean values in query strings.
+///
+/// The Confluent Python client sends `True`/`False` (Python's `str(bool)`)
+/// but serde only accepts lowercase. This rewrites the URI once so every
+/// endpoint handles it transparently.
+pub async fn normalize_query_bools(
+    mut req: Request<axum::body::Body>,
+    next: Next,
+) -> impl IntoResponse {
+    if let Some(query) = req.uri().query() {
+        let normalized: String = query
+            .split('&')
+            .map(|pair| match pair.split_once('=') {
+                Some((k, v)) if v.eq_ignore_ascii_case("true") => format!("{k}=true"),
+                Some((k, v)) if v.eq_ignore_ascii_case("false") => format!("{k}=false"),
+                _ => pair.to_string(),
+            })
+            .collect::<Vec<_>>()
+            .join("&");
+
+        if normalized != query {
+            let pq = format!("{}?{normalized}", req.uri().path());
+            if let Ok(uri) = pq.parse::<Uri>() {
+                *req.uri_mut() = uri;
+            }
+        }
+    }
+    next.run(req).await
+}
 
 // -- Content-type negotiation --
 

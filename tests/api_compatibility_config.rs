@@ -266,3 +266,39 @@ async fn get_subject_compatibility_returns_override_not_global() {
     // Restore global default
     common::api::set_global_compatibility(&client, &base, "BACKWARD").await;
 }
+
+// -- Python-style booleans (case-insensitive query params) --
+
+#[tokio::test]
+#[serial]
+async fn get_global_compatibility_accepts_python_style_default_to_global() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    // Python's str(True) → "True"
+    let resp = client
+        .get(format!("{base}/config?defaultToGlobal=True"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn get_subject_compatibility_accepts_python_style_default_to_global() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let subject = format!("py-compat-{}", uuid::Uuid::new_v4());
+
+    common::api::register_schema(&client, &base, &subject, common::AVRO_SCHEMA_V1).await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .get(format!("{base}/config/{subject}?defaultToGlobal=True"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["compatibilityLevel"], "BACKWARD");
+}

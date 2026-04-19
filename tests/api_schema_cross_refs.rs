@@ -401,3 +401,46 @@ async fn content_survives_version_hard_delete() {
     let subjects: Vec<String> = resp.json().await.unwrap();
     assert_eq!(subjects, vec![s2]);
 }
+
+// -- Python-style booleans (case-insensitive query params) --
+
+#[tokio::test]
+async fn get_subjects_by_schema_id_accepts_python_style_deleted_true() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("py-xref-subj-{}", uuid::Uuid::new_v4());
+    let schema = common::unique_avro_schema();
+
+    let id = common::api::register_schema(&client, &base, &subject, &schema).await;
+    common::api::delete_subject(&client, &base, &subject).await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .get(format!("{base}/schemas/ids/{id}/subjects?deleted=True"))
+        .send()
+        .await
+        .unwrap();
+    let subjects: Vec<String> = resp.json().await.unwrap();
+    assert_eq!(subjects, vec![subject]);
+}
+
+#[tokio::test]
+async fn get_versions_by_schema_id_accepts_python_style_deleted_true() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let subject = format!("py-xref-ver-{}", uuid::Uuid::new_v4());
+    let schema = common::unique_avro_schema();
+
+    let id = common::api::register_schema(&client, &base, &subject, &schema).await;
+    common::api::delete_subject(&client, &base, &subject).await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .get(format!("{base}/schemas/ids/{id}/versions?deleted=True"))
+        .send()
+        .await
+        .unwrap();
+    let versions: Vec<serde_json::Value> = resp.json().await.unwrap();
+    assert_eq!(versions.len(), 1);
+    assert_eq!(versions[0]["subject"], subject);
+}

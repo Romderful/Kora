@@ -555,3 +555,80 @@ async fn delete_subject_mode_recursive_clears_child_subjects() {
     let resp = common::api::get_subject_mode(&client, &base, &child2).await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
+
+// -- Python-style booleans (case-insensitive query params) --
+
+#[tokio::test]
+#[file_serial]
+async fn set_global_mode_accepts_python_style_force_true() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    // Python's str(True) → "True"
+    let resp = client
+        .put(format!("{base}/mode?force=True"))
+        .json(&serde_json::json!({"mode": "READONLY"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Restore default
+    common::api::set_global_mode(&client, &base, "READWRITE").await;
+}
+
+#[tokio::test]
+#[file_serial]
+async fn get_global_mode_accepts_python_style_default_to_global() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+
+    // Python's str(True) → "True"
+    let resp = client
+        .get(format!("{base}/mode?defaultToGlobal=True"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["mode"], "READWRITE");
+}
+
+#[tokio::test]
+async fn get_subject_mode_accepts_python_style_default_to_global() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let subject = format!("py-mode-{}", uuid::Uuid::new_v4());
+
+    // Python's str(True) → "True"
+    let resp = client
+        .get(format!("{base}/mode/{subject}?defaultToGlobal=True"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["mode"], "READWRITE");
+}
+
+#[tokio::test]
+async fn delete_subject_mode_accepts_python_style_recursive_true() {
+    let base = common::spawn_server().await;
+    let client = Client::new();
+    let parent = format!("py-recur-{}", uuid::Uuid::new_v4());
+    let child = format!("{parent}-child");
+
+    common::api::set_subject_mode(&client, &base, &parent, "READONLY").await;
+    common::api::set_subject_mode(&client, &base, &child, "IMPORT").await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .delete(format!("{base}/mode/{parent}?recursive=True"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let resp = common::api::get_subject_mode(&client, &base, &child).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}

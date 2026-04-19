@@ -218,6 +218,38 @@ async fn list_schemas_omits_schema_type_for_avro() {
     );
 }
 
+// -- Python-style booleans (case-insensitive query params) --
+
+#[tokio::test]
+async fn list_schemas_accepts_python_style_deleted_and_latest_only() {
+    let base = common::spawn_server().await;
+    let client = reqwest::Client::new();
+    let uid = uuid::Uuid::new_v4();
+    let s1 = format!("py-list-{uid}");
+
+    common::api::register_schema(&client, &base, &s1, common::AVRO_SCHEMA_V1).await;
+    common::api::register_schema(&client, &base, &s1, common::AVRO_SCHEMA_V2).await;
+    common::api::delete_version(&client, &base, &s1, "2").await;
+
+    // Python's str(True) → "True"
+    let resp = client
+        .get(format!(
+            "{base}/schemas?deleted=True&latestOnly=True&subjectPrefix=py-list-{uid}"
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Vec<serde_json::Value> = resp.json().await.unwrap();
+    assert_eq!(body.len(), 1);
+    assert_eq!(
+        body[0]["version"], 2,
+        "should return the soft-deleted latest"
+    );
+}
+
+// -- LIKE metacharacter escaping --
+
 #[tokio::test]
 async fn list_schemas_like_metacharacter_escaping() {
     let base = common::spawn_server().await;
