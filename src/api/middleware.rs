@@ -76,15 +76,18 @@ pub async fn content_type_negotiation(
 
 // -- Request instrumentation --
 
-/// Middleware that records Prometheus metrics for every request:
-/// - `http_requests_total` counter with `method`, `path`, `status` labels
-/// - `http_request_duration_seconds` histogram with `method`, `path` labels
+/// Middleware that logs every request and records Prometheus metrics.
 ///
-/// The `/metrics` endpoint itself is excluded to avoid a self-referential
-/// feedback loop that pollutes counters with scraper traffic.
+/// Emits a structured log line per request using field names aligned with
+/// [OpenTelemetry semantic conventions](https://opentelemetry.io/docs/specs/semconv/http/http-spans/):
+/// `http.method`, `http.route`, `http.status_code`, `url.path`, `latency_ms`.
+///
+/// Log levels: DEBUG for `/metrics` and `/health`, ERROR for 5xx, INFO for
+/// everything else (including 4xx — client errors are expected traffic).
 pub async fn track_metrics(req: Request<axum::body::Body>, next: Next) -> impl IntoResponse {
     let method = req.method().to_string();
-    let path = req
+    let uri = req.uri().path().to_owned();
+    let route = req
         .extensions()
         .get::<MatchedPath>()
         .map_or_else(|| "unmatched".to_owned(), |mp| mp.as_str().to_owned());
@@ -92,26 +95,64 @@ pub async fn track_metrics(req: Request<axum::body::Body>, next: Next) -> impl I
     let start = Instant::now();
     let response = next.run(req).await;
 
-    // Skip self-instrumentation for the metrics endpoint.
-    if path == "/metrics" {
+    let elapsed = start.elapsed().as_secs_f64();
+    let status_code = response.status().as_u16();
+    let latency_ms = (elapsed * 1_000_000.0).round() / 1000.0;
+
+    // Log every request with OTel-aligned field names.
+    // 5xx arm first so a failing /health is logged as ERROR, not DEBUG.
+    match (route.as_str(), status_code) {
+        (_, 500..) => {
+            tracing::error!(
+                http.method = %method,
+                http.route = %route,
+                url.path = %uri,
+                http.status_code = status_code,
+                latency_ms,
+                "request"
+            );
+        }
+        ("/metrics" | "/health", _) => {
+            tracing::debug!(
+                http.method = %method,
+                http.route = %route,
+                url.path = %uri,
+                http.status_code = status_code,
+                latency_ms,
+                "request"
+            );
+        }
+        _ => {
+            tracing::info!(
+                http.method = %method,
+                http.route = %route,
+                url.path = %uri,
+                http.status_code = status_code,
+                latency_ms,
+                "request"
+            );
+        }
+    }
+
+    // Skip metrics self-instrumentation for the metrics endpoint.
+    if route == "/metrics" {
         return response;
     }
 
-    let elapsed = start.elapsed().as_secs_f64();
-    let status = response.status().as_u16().to_string();
+    let status_str = status_code.to_string();
 
     metrics::counter!(
         "http_requests_total",
         "method" => method.clone(),
-        "path" => path.clone(),
-        "status" => status,
+        "path" => route.clone(),
+        "status" => status_str,
     )
     .increment(1);
 
     metrics::histogram!(
         "http_request_duration_seconds",
         "method" => method,
-        "path" => path,
+        "path" => route,
     )
     .record(elapsed);
 

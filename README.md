@@ -85,6 +85,7 @@ All configuration is done via environment variables:
 | `PORT` | `8080` | Server listen port |
 | `MAX_BODY_SIZE` | `16777216` | Maximum request body size (bytes, default 16 MB) |
 | `DB_POOL_MAX` | `20` | Maximum database connections in the pool |
+| `RUST_LOG` | `info` | Log level filter (`error`, `warn`, `info`, `debug`, `trace`) |
 
 The embedded image auto-generates `DATABASE_URL` when none is provided. If `DATABASE_URL` is set, embedded PostgreSQL is skipped entirely — even on the embedded image.
 
