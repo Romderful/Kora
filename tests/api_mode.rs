@@ -595,6 +595,7 @@ async fn get_global_mode_accepts_python_style_default_to_global() {
 }
 
 #[tokio::test]
+#[file_serial]
 async fn get_subject_mode_accepts_python_style_default_to_global() {
     let base = common::spawn_server().await;
     let client = Client::new();
