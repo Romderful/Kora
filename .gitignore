@@ -4,4 +4,3 @@
 .github/hooks/
 test-artifacts/
 chart/charts/
-chart/Chart.lock
