@@ -66,3 +66,25 @@ jobs:
           name: test-logs
           path: target/tmp/
           retention-days: 14
+
+  helm-lint:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Build dependencies
+        run: helm dependency build chart/
+
+      - name: Lint chart
+        run: helm lint chart/ --set database.host=lint --set database.password=lint
+
+      - name: Template (standard)
+        run: helm template kora chart/ --set database.host=test --set database.password=test > /dev/null
+
+      - name: Template (existingSecret)
+        run: helm template kora chart/ --set database.existingSecret=my-secret > /dev/null

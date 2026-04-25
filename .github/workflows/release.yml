@@ -118,8 +118,9 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Stamp chart version
+        env:
+          VERSION: ${{ needs.release-plz.outputs.version }}
         run: |
-          VERSION=${{ needs.release-plz.outputs.version }}
           sed -i "s/^version:.*/version: ${VERSION}/" chart/Chart.yaml
           sed -i "s/^appVersion:.*/appVersion: ${VERSION}/" chart/Chart.yaml
 
@@ -133,4 +134,6 @@ jobs:
         run: helm package chart/
 
       - name: Push chart to GHCR
-        run: helm push kora-*.tgz ${{ env.CHART }}
+        env:
+          VERSION: ${{ needs.release-plz.outputs.version }}
+        run: helm push "kora-${VERSION}.tgz" ${{ env.CHART }}

@@ -58,6 +58,7 @@ helm install kora oci://ghcr.io/romderful/kora/charts/kora \
 |-----------|-------------|---------|
 | `nameOverride` | Partial name override | `""` |
 | `fullnameOverride` | Full name override | `""` |
+| `namespaceOverride` | Namespace override | `""` |
 | `commonLabels` | Labels for all resources | `{}` |
 | `commonAnnotations` | Annotations for all resources | `{}` |
 | `extraDeploy` | Extra objects to deploy | `[]` |
@@ -71,6 +72,7 @@ helm install kora oci://ghcr.io/romderful/kora/charts/kora \
 | `image.tag` | Image tag | `v{appVersion}` |
 | `image.digest` | Image digest (overrides tag) | `""` |
 | `image.pullPolicy` | Pull policy | `IfNotPresent` |
+| `image.pullSecrets` | Image pull secrets | `[]` |
 
 ### Kora Configuration
 
@@ -106,6 +108,11 @@ helm install kora oci://ghcr.io/romderful/kora/charts/kora \
 | `deploymentAnnotations` | Deployment annotations | `{}` |
 | `podAnnotations` | Pod annotations | `{}` |
 | `podLabels` | Extra pod labels | `{}` |
+
+### Pod
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
 | `terminationGracePeriodSeconds` | Grace period | `30` |
 | `schedulerName` | Scheduler name | `""` |
 | `priorityClassName` | Priority class | `""` |
@@ -118,9 +125,26 @@ helm install kora oci://ghcr.io/romderful/kora/charts/kora \
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `podSecurityContext.enabled` | Enable pod security context | `true` |
+| `podSecurityContext.runAsNonRoot` | Force non-root | `true` |
+| `podSecurityContext.fsGroup` | Set fsGroup | `65534` |
+| `podSecurityContext.seccompProfile.type` | Seccomp profile | `RuntimeDefault` |
 | `containerSecurityContext.enabled` | Enable container security context | `true` |
+| `containerSecurityContext.runAsUser` | Run as user | `65534` |
+| `containerSecurityContext.runAsGroup` | Run as group | `65534` |
+| `containerSecurityContext.runAsNonRoot` | Force non-root | `true` |
+| `containerSecurityContext.readOnlyRootFilesystem` | Read-only root FS | `true` |
+| `containerSecurityContext.allowPrivilegeEscalation` | Allow privilege escalation | `false` |
+| `containerSecurityContext.capabilities.drop` | Capabilities to drop | `["ALL"]` |
+| `containerSecurityContext.seccompProfile.type` | Container seccomp | `RuntimeDefault` |
 
-PSS "restricted" profile by default: non-root (UID 65534), read-only filesystem, no privilege escalation, all capabilities dropped, seccomp RuntimeDefault.
+### Resources
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `resources.requests.cpu` | CPU request | `100m` |
+| `resources.requests.memory` | Memory request | `64Mi` |
+| `resources.limits.cpu` | CPU limit | `500m` |
+| `resources.limits.memory` | Memory limit | `256Mi` |
 
 ### Probes
 
@@ -129,8 +153,19 @@ All probes have an `enabled` flag and can be fully overridden via `custom*Probe`
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `startupProbe.enabled` | Enable startup probe | `true` |
+| `startupProbe.periodSeconds` | Period | `2` |
+| `startupProbe.failureThreshold` | Failure threshold | `30` |
+| `startupProbe.timeoutSeconds` | Timeout | `3` |
 | `readinessProbe.enabled` | Enable readiness probe | `true` |
-| `livenessProbe.enabled` | Enable liveness probe (TCP, not /health) | `true` |
+| `readinessProbe.initialDelaySeconds` | Initial delay | `5` |
+| `readinessProbe.periodSeconds` | Period | `5` |
+| `readinessProbe.timeoutSeconds` | Timeout | `3` |
+| `readinessProbe.failureThreshold` | Failure threshold | `3` |
+| `livenessProbe.enabled` | Enable liveness probe (TCP) | `true` |
+| `livenessProbe.initialDelaySeconds` | Initial delay | `10` |
+| `livenessProbe.periodSeconds` | Period | `10` |
+| `livenessProbe.timeoutSeconds` | Timeout | `3` |
+| `livenessProbe.failureThreshold` | Failure threshold | `6` |
 | `customStartupProbe` | Custom startup probe | `{}` |
 | `customReadinessProbe` | Custom readiness probe | `{}` |
 | `customLivenessProbe` | Custom liveness probe | `{}` |
@@ -142,6 +177,11 @@ All probes have an `enabled` flag and can be fully overridden via `custom*Probe`
 |-----------|-------------|---------|
 | `service.type` | Service type | `ClusterIP` |
 | `service.ports.http` | HTTP port | `8080` |
+| `service.nodePorts.http` | NodePort for HTTP | `""` |
+| `service.clusterIP` | Static ClusterIP | `""` |
+| `service.loadBalancerIP` | Static LB IP | `""` |
+| `service.loadBalancerSourceRanges` | LB source ranges | `[]` |
+| `service.externalTrafficPolicy` | External traffic policy | `Cluster` |
 | `service.annotations` | Service annotations | `{}` |
 
 ### Service Account
@@ -158,15 +198,17 @@ All probes have an `enabled` flag and can be fully overridden via `custom*Probe`
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `ingress.enabled` | Enable ingress | `false` |
+| `ingress.pathType` | Path type | `ImplementationSpecific` |
 | `ingress.hostname` | Hostname | `kora.local` |
 | `ingress.path` | Path | `/` |
-| `ingress.tls` | Enable TLS | `false` |
-| `ingress.selfSigned` | Self-signed TLS cert | `false` |
 | `ingress.ingressClassName` | Ingress class | `""` |
 | `ingress.annotations` | Ingress annotations | `{}` |
+| `ingress.tls` | Enable TLS | `false` |
+| `ingress.selfSigned` | Self-signed TLS cert | `false` |
 | `ingress.extraHosts` | Additional hosts | `[]` |
 | `ingress.extraTls` | Additional TLS config | `[]` |
 | `ingress.secrets` | Custom TLS secrets | `[]` |
+| `ingress.extraRules` | Additional ingress rules | `[]` |
 
 ### Metrics
 
@@ -174,8 +216,14 @@ All probes have an `enabled` flag and can be fully overridden via `custom*Probe`
 |-----------|-------------|---------|
 | `metrics.enabled` | Enable metrics | `false` |
 | `metrics.serviceMonitor.enabled` | Enable ServiceMonitor | `false` |
+| `metrics.serviceMonitor.namespace` | ServiceMonitor namespace | `""` |
 | `metrics.serviceMonitor.interval` | Scrape interval | `30s` |
 | `metrics.serviceMonitor.scrapeTimeout` | Scrape timeout | `10s` |
+| `metrics.serviceMonitor.labels` | Extra labels | `{}` |
+| `metrics.serviceMonitor.annotations` | Annotations | `{}` |
+| `metrics.serviceMonitor.honorLabels` | Honor labels | `false` |
+| `metrics.serviceMonitor.metricRelabelings` | Metric relabelings | `[]` |
+| `metrics.serviceMonitor.relabelings` | Relabelings | `[]` |
 
 ### Autoscaling
 
@@ -185,12 +233,14 @@ All probes have an `enabled` flag and can be fully overridden via `custom*Probe`
 | `autoscaling.minReplicas` | Min replicas | `2` |
 | `autoscaling.maxReplicas` | Max replicas | `10` |
 | `autoscaling.targetCPU` | Target CPU % | `80` |
+| `autoscaling.targetMemory` | Target memory % | `""` |
 
 ### PDB
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `pdb.create` | Enable PDB | `false` |
+| `pdb.minAvailable` | Min available | `""` |
 | `pdb.maxUnavailable` | Max unavailable | `1` |
 
 ### Network Policy
@@ -200,6 +250,8 @@ All probes have an `enabled` flag and can be fully overridden via `custom*Probe`
 | `networkPolicy.enabled` | Enable NetworkPolicy | `false` |
 | `networkPolicy.allowExternal` | Allow external ingress | `true` |
 | `networkPolicy.allowExternalEgress` | Allow external egress | `true` |
+| `networkPolicy.extraIngress` | Extra ingress rules | `[]` |
+| `networkPolicy.extraEgress` | Extra egress rules | `[]` |
 
 ### Scheduling
 
@@ -241,6 +293,36 @@ metrics:
 
 networkPolicy:
   enabled: true
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+```
+
+## Security
+
+The chart enforces [Pod Security Standards "restricted"](https://kubernetes.io/docs/concepts/security/pod-security-standards/) by default:
+
+- Non-root user (UID 65534)
+- Read-only root filesystem
+- No privilege escalation
+- All capabilities dropped
+- Seccomp RuntimeDefault profile
+
+## Monitoring
+
+Kora exposes Prometheus metrics at `/metrics`. Enable the ServiceMonitor for automatic scraping with Prometheus Operator:
+
+```yaml
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 15s
 ```
 
 ## Uninstalling
