@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/Romderful/kora/compare/v0.2.4...v0.3.0) - 2026-04-27
+
+### Added
+
+- *(chart)* support existingSecret for password and URL via secretKeys ([#32](https://github.com/Romderful/kora/pull/32))
+
+### Other
+
+- *(deps)* bump sha2 from 0.10.9 to 0.11.0 ([#26](https://github.com/Romderful/kora/pull/26))
+- *(deps)* bump metrics-exporter-prometheus from 0.16.2 to 0.18.1 ([#27](https://github.com/Romderful/kora/pull/27))
+- *(deps)* bump jsonschema from 0.45.1 to 0.46.2 ([#28](https://github.com/Romderful/kora/pull/28))
+- *(deps)* bump the rust-minor-patch group with 3 updates ([#25](https://github.com/Romderful/kora/pull/25))
+
 ## [0.2.4](https://github.com/Romderful/kora/compare/v0.2.3...v0.2.4) - 2026-04-25
 
 ### Added
