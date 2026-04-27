@@ -25,7 +25,7 @@ pub fn parse(raw: &str) -> Result<(String, String), KoraError> {
 
     let mut hasher = Sha256::new();
     hasher.update(canonical.as_bytes());
-    let fingerprint = format!("{:x}", hasher.finalize());
+    let fingerprint = hex::encode(hasher.finalize());
 
     Ok((canonical, fingerprint))
 }

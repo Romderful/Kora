@@ -122,7 +122,7 @@ pub fn parse(format: SchemaFormat, raw: &str) -> Result<ParsedSchema, KoraError>
 
     let mut hasher = Sha256::new();
     hasher.update(raw.as_bytes());
-    let raw_fingerprint = format!("{:x}", hasher.finalize());
+    let raw_fingerprint = hex::encode(hasher.finalize());
 
     Ok(ParsedSchema {
         canonical_form,
