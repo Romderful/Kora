@@ -83,8 +83,43 @@ jobs:
       - name: Lint chart
         run: helm lint chart/ --set database.host=lint --set database.password=lint
 
-      - name: Template (standard)
-        run: helm template kora chart/ --set database.host=test --set database.password=test > /dev/null
+      - name: Template (component — inline password)
+        run: |
+          out=$(helm template kora chart/ --set database.host=test --set database.password=test)
+          grep -q 'kind: Secret' <<<"$out"
+          grep -q 'name: kora-db' <<<"$out"
+          grep -q 'key: "password"' <<<"$out"
+          grep -q 'name: DB_HOST' <<<"$out"
 
-      - name: Template (existingSecret)
-        run: helm template kora chart/ --set database.existingSecret=my-secret > /dev/null
+      - name: Template (component — existing secret)
+        run: |
+          out=$(helm template kora chart/ --set database.host=test --set database.existingSecret=my-secret --set database.secretKeys.password=db-password)
+          ! grep -q 'kind: Secret' <<<"$out"
+          grep -q 'name: my-secret' <<<"$out"
+          grep -q 'key: "db-password"' <<<"$out"
+
+      - name: Template (URL — inline)
+        run: |
+          out=$(helm template kora chart/ --set database.url=postgres://u:p@h/d)
+          grep -q 'kind: Secret' <<<"$out"
+          grep -q 'name: DATABASE_URL' <<<"$out"
+          ! grep -q 'name: DB_HOST' <<<"$out"
+
+      - name: Template (URL — existing secret)
+        run: |
+          out=$(helm template kora chart/ --set database.existingSecret=my-secret --set database.secretKeys.url=DATABASE_URL)
+          ! grep -q 'kind: Secret' <<<"$out"
+          grep -q 'name: my-secret' <<<"$out"
+          grep -q 'key: "DATABASE_URL"' <<<"$out"
+
+      - name: Template (mutually exclusive — must fail)
+        run: |
+          assert_fail() {
+            local msg=$1
+            shift
+            out=$(helm template kora chart/ "$@" 2>&1) && { echo "expected fail, got success"; echo "$out"; exit 1; }
+            grep -q "$msg" <<<"$out" || { echo "expected message '$msg', got:"; echo "$out"; exit 1; }
+          }
+          assert_fail 'mutually exclusive' --set database.url=postgres://u:p@h/d --set database.existingSecret=my-secret
+          assert_fail 'mutually exclusive' --set database.host=h --set database.password=p --set database.existingSecret=my-secret
+          assert_fail 'mutually exclusive' --set database.url=postgres://u:p@h/d --set database.password=p

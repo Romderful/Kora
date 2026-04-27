@@ -14,8 +14,6 @@ async fn main() {
 
     let cfg = KoraConfig::load().expect("failed to load configuration");
 
-    assert!(!cfg.database_url.is_empty(), "DATABASE_URL is required");
-
     tracing::info!(host = %cfg.host, port = %cfg.port, "starting Kora");
 
     let metrics_handle = metrics_exporter_prometheus::PrometheusBuilder::new()

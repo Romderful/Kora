@@ -51,24 +51,29 @@ kora:
   extraEnvVarsCM: ""
   extraEnvVarsSecret: ""
 
-## @section Database parameters (external PostgreSQL — REQUIRED)
-## @param database.host PostgreSQL host (REQUIRED unless url or existingSecret is set)
+## @section Database parameters (external PostgreSQL)
+## @param database.host PostgreSQL host
 ## @param database.port PostgreSQL port
 ## @param database.user PostgreSQL user
-## @param database.password PostgreSQL password (ignored if existingSecret is set)
-## @param database.name PostgreSQL database name
-## @param database.url Full DATABASE_URL override (takes priority, for SSL params etc.)
-## @param database.existingSecret Name of existing Secret containing DATABASE_URL
-## @param database.existingSecretKey Key in the existing Secret
+## @param database.database PostgreSQL database name
+## @param database.password Direct value for database password (used if database.existingSecret is not set)
+## @param database.url Direct value for the full DATABASE_URL (used if database.existingSecret is not set); takes priority over components
+## @param database.existingSecret Name of existing secret containing the database password or DATABASE_URL
+## @param database.secretKeys.password Key name in the secret for the database password
+## @param database.secretKeys.url Key name in the secret for the full DATABASE_URL; when set, takes priority over secretKeys.password
 database:
   host: ""
   port: 5432
   user: "kora"
+  database: "kora"
+  ## Direct values (used when existingSecret is not set)
   password: ""
-  name: "kora"
   url: ""
+  ## For using an existing secret
   existingSecret: ""
-  existingSecretKey: "DATABASE_URL"
+  secretKeys:
+    password: "password"
+    url: ""
 
 ## @section Deployment parameters
 ## @param replicaCount Number of Kora replicas

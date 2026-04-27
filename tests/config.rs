@@ -1,6 +1,7 @@
 //! Tests for application configuration.
+#![allow(clippy::result_large_err)] // Jail::expect_with's closure must return Result<_, figment::Error>; we can't box.
 
-use figment::{Figment, providers::Serialized};
+use figment::{Figment, Jail, providers::Serialized};
 use kora::config::KoraConfig;
 
 #[test]
@@ -30,13 +31,47 @@ fn config_env_overrides_defaults() {
 }
 
 #[test]
-fn config_database_url_required() {
-    let cfg: KoraConfig = Figment::from(Serialized::defaults(KoraConfig::default()))
-        .extract()
-        .expect("defaults should parse");
+fn load_uses_database_url_env_when_set() {
+    Jail::expect_with(|jail| {
+        jail.set_env("DATABASE_URL", "postgres://from-env/db");
+        jail.set_env("DB_HOST", "should-be-ignored");
 
-    assert!(
-        cfg.database_url.is_empty(),
-        "default database_url should be empty"
-    );
+        let cfg = KoraConfig::load().expect("load should succeed");
+
+        assert_eq!(cfg.database_url, "postgres://from-env/db");
+        Ok(())
+    });
+}
+
+#[test]
+fn load_composes_database_url_from_components() {
+    Jail::expect_with(|jail| {
+        jail.set_env("DATABASE_URL", "");
+        jail.set_env("DB_HOST", "pg.local");
+        jail.set_env("DB_PORT", "6543");
+        jail.set_env("DB_USER", "ko@ra");
+        jail.set_env("DB_PASSWORD", "p@ss/word");
+        jail.set_env("DB_NAME", "kora");
+
+        let cfg = KoraConfig::load().expect("load should succeed");
+
+        assert_eq!(
+            cfg.database_url,
+            "postgres://ko%40ra:p%40ss%2Fword@pg.local:6543/kora"
+        );
+        Ok(())
+    });
+}
+
+#[test]
+fn load_errors_when_neither_url_nor_components_provided() {
+    Jail::expect_with(|jail| {
+        jail.set_env("DATABASE_URL", "");
+        let err = KoraConfig::load().expect_err("load should fail");
+        let msg = err.to_string();
+
+        assert!(msg.contains("DATABASE_URL"), "{msg}");
+        assert!(msg.contains("DB_HOST"), "{msg}");
+        Ok(())
+    });
 }

@@ -23,6 +23,7 @@ tokio = { version = "1.52.1", features = ["full"] }
 tower-http = { version = "0.6.8", features = ["set-header"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["json", "env-filter"] }
+urlencoding = "2.1"
 uuid = { version = "1.23.1", features = ["v4", "serde"] }
 
 [profile.release]
@@ -32,6 +33,7 @@ opt-level = "s"
 strip = true
 
 [dev-dependencies]
+figment = { version = "0.10.19", features = ["env", "test"] }
 reqwest = { version = "0.13.2", features = ["json"] }
 serial_test = { version = "3.4.0", features = ["file_locks"] }
 tokio-test = "0.4.5"

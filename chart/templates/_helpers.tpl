@@ -25,36 +25,49 @@ Create the name of the service account to use.
 {{- end -}}
 
 {{/*
-Build DATABASE_URL from components.
-Priority: url > host/port/user/password/name.
-*/}}
-{{- define "kora.databaseUrl" -}}
-{{- if .Values.database.url }}
-{{- .Values.database.url }}
-{{- else }}
-{{- printf "postgres://%s:%s@%s:%v/%s" .Values.database.user .Values.database.password .Values.database.host (int .Values.database.port) .Values.database.name }}
-{{- end }}
-{{- end }}
-
-{{/*
-Return the name of the database secret.
+Return the name of the secret containing the database password.
+Uses existingSecret if provided, otherwise returns the auto-created secret name.
 */}}
 {{- define "kora.databaseSecretName" -}}
-{{- if .Values.database.existingSecret }}
-{{- .Values.database.existingSecret }}
-{{- else }}
-{{- include "common.names.fullname" . }}-db
-{{- end }}
-{{- end }}
+{{- if .Values.database.existingSecret -}}
+{{- include "common.tplvalues.render" (dict "value" .Values.database.existingSecret "context" $) -}}
+{{- else -}}
+{{- printf "%s-db" (include "common.names.fullname" .) -}}
+{{- end -}}
+{{- end -}}
 
 {{/*
-Validate values — fail early on misconfiguration.
+Return the database password key — same in the auto-Secret and in existingSecret.
 */}}
-{{- define "kora.validateValues" -}}
-{{- if and (not .Values.database.host) (not .Values.database.url) (not .Values.database.existingSecret) }}
-{{- fail "database: you must set one of database.host, database.url, or database.existingSecret" }}
-{{- end }}
-{{- if and .Values.database.host (not .Values.database.url) (not .Values.database.existingSecret) (not .Values.database.password) }}
-{{- fail "database: database.password is required when using database.host (use database.existingSecret for production)" }}
-{{- end }}
-{{- end }}
+{{- define "kora.databasePasswordKey" -}}
+{{- print .Values.database.secretKeys.password -}}
+{{- end -}}
+
+{{/*
+Returns "true" when the DATABASE_URL is mounted instead of the DB_* components.
+URL mode is active when either database.url is set, or database.existingSecret is
+set together with database.secretKeys.url.
+*/}}
+{{- define "kora.databaseUrlMode" -}}
+{{- if or .Values.database.url (and .Values.database.existingSecret .Values.database.secretKeys.url) -}}
+true
+{{- end -}}
+{{- end -}}
+
+{{/*
+Return the database URL key — same in the auto-Secret and in existingSecret.
+Defaults to DATABASE_URL when secretKeys.url is empty (only reached if url mode is active via plain database.url).
+*/}}
+{{- define "kora.databaseUrlKey" -}}
+{{- default "DATABASE_URL" .Values.database.secretKeys.url -}}
+{{- end -}}
+
+{{/*
+Generic helper: fail if neither a direct value nor an existingSecret is provided.
+Usage: include "kora.requireValueOrExistingSecret" (dict "value" .Values.foo.bar "existingSecret" .Values.foo.existingSecret "message" "Either foo.bar or foo.existingSecret must be provided")
+*/}}
+{{- define "kora.requireValueOrExistingSecret" -}}
+{{- if and (not .value) (not .existingSecret) -}}
+{{- fail .message -}}
+{{- end -}}
+{{- end -}}

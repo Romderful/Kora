@@ -18,9 +18,14 @@ helm install kora oci://ghcr.io/romderful/kora/charts/kora \
 
 ## Database Configuration
 
-Three modes — pick one:
+Two channels:
 
-### Host and password
+- **Component mode** (default) — `host` / `port` / `user` / `database` plain in values, `password` always mounted via `secretKeyRef` (auto-Secret or `existingSecret`).
+- **URL mode** — full `DATABASE_URL` mounted via `secretKeyRef` (auto-Secret or `existingSecret`). Triggered by setting `database.url` or `database.secretKeys.url` (with `existingSecret`). Components are ignored.
+
+The auto-Secret base64-encodes the value but does not encrypt it — never commit `helm template` output to git.
+
+### Component mode — inline
 
 ```bash
 helm install kora oci://ghcr.io/romderful/kora/charts/kora \
@@ -28,19 +33,34 @@ helm install kora oci://ghcr.io/romderful/kora/charts/kora \
   --set database.password=secret
 ```
 
-### Full URL (for SSL, custom params)
+### Component mode — password from existing Secret
+
+Suits ExternalSecrets Operator, CloudNativePG, AWS RDS via ESO, Vault, etc.
 
 ```bash
 helm install kora oci://ghcr.io/romderful/kora/charts/kora \
-  --set database.url="postgres://kora:secret@postgres:5432/kora?sslmode=require"
+  --set database.host=postgres.example.com \
+  --set database.existingSecret=kora-db-credentials
 ```
 
-### Existing secret (recommended for production)
+Override the key with `--set database.secretKeys.password=db-password` if it isn't `password`.
+
+### URL mode — inline
 
 ```bash
-kubectl create secret generic kora-db --from-literal=DATABASE_URL="postgres://..."
 helm install kora oci://ghcr.io/romderful/kora/charts/kora \
-  --set database.existingSecret=kora-db
+  --set database.url="postgres://kora:secret@pg:5432/kora?sslmode=require"
+```
+
+### URL mode — from existing Secret
+
+```bash
+kubectl create secret generic kora-db \
+  --from-literal=DATABASE_URL="postgres://kora:secret@pg:5432/kora?sslmode=require"
+
+helm install kora oci://ghcr.io/romderful/kora/charts/kora \
+  --set database.existingSecret=kora-db \
+  --set database.secretKeys.url=DATABASE_URL
 ```
 
 ## Production Example
@@ -49,6 +69,7 @@ helm install kora oci://ghcr.io/romderful/kora/charts/kora \
 replicaCount: 3
 
 database:
+  host: postgres.example.com
   existingSecret: kora-db-credentials
 
 ingress:
@@ -112,14 +133,15 @@ resources:
 
 | Parameter | Default | Description |
 |---|---|---|
-| `database.host` | `""` | PostgreSQL host |
-| `database.port` | `5432` | PostgreSQL port |
-| `database.user` | `kora` | PostgreSQL user |
-| `database.password` | `""` | PostgreSQL password |
-| `database.name` | `kora` | PostgreSQL database |
-| `database.url` | `""` | Full DATABASE_URL override |
-| `database.existingSecret` | `""` | Existing secret name |
-| `database.existingSecretKey` | `DATABASE_URL` | Key in existing secret |
+| `database.host` | `""` | PostgreSQL host (plain) |
+| `database.port` | `5432` | PostgreSQL port (plain) |
+| `database.user` | `kora` | PostgreSQL user (plain) |
+| `database.database` | `kora` | PostgreSQL database name (plain) |
+| `database.password` | `""` | Direct password (component mode; goes into the auto-Secret) |
+| `database.url` | `""` | Direct DATABASE_URL (URL mode; goes into the auto-Secret) |
+| `database.existingSecret` | `""` | Existing Secret holding the password or the URL |
+| `database.secretKeys.password` | `password` | Key in existingSecret holding the password |
+| `database.secretKeys.url` | `""` | Key in existingSecret holding the DATABASE_URL — when set, switches to URL mode |
 
 ### Deployment
 
