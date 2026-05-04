@@ -8,7 +8,7 @@ apache-avro = "0.21.0"
 axum = { version = "0.8.9", features = ["macros"] }
 figment = { version = "0.10.19", features = ["env"] }
 hex = "0.4"
-jsonschema = { version = "0.46.2", default-features = false }
+jsonschema = { version = "0.46.4", default-features = false }
 metrics = "0.24"
 metrics-exporter-prometheus = "0.18"
 prost-types = "0.14.3"
@@ -34,6 +34,6 @@ strip = true
 
 [dev-dependencies]
 figment = { version = "0.10.19", features = ["env", "test"] }
-reqwest = { version = "0.13.2", features = ["json"] }
+reqwest = { version = "0.13.3", features = ["json"] }
 serial_test = { version = "3.4.0", features = ["file_locks"] }
 tokio-test = "0.4.5"
